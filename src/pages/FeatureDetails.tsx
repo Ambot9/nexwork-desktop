@@ -894,11 +894,38 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             duration: 5
           })
         } else {
-          message.error({ 
-            content: `${projectName}: Pull failed - ${result.error?.substring(0, 100)}`, 
-            key: `pull-${projectName}`,
-            duration: 5
-          })
+          // Check if it's an authentication error
+          const errorMsg = result.error || ''
+          const isAuthError = errorMsg.includes('Authentication failed') || 
+                             errorMsg.includes('Access denied') ||
+                             errorMsg.includes('HTTP Basic')
+          
+          if (isAuthError) {
+            message.error({ 
+              content: (
+                <div>
+                  <div><strong>{projectName}: Authentication Failed</strong></div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>
+                    Git credentials not configured. Open terminal and run:
+                  </div>
+                  <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 4, background: '#2a2a2a', padding: 4, borderRadius: 2 }}>
+                    git config --global credential.helper store
+                  </div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>
+                    Then try git pull/push manually once to save credentials.
+                  </div>
+                </div>
+              ),
+              key: `pull-${projectName}`,
+              duration: 10
+            })
+          } else {
+            message.error({ 
+              content: `${projectName}: Pull failed - ${errorMsg.substring(0, 100)}`, 
+              key: `pull-${projectName}`,
+              duration: 5
+            })
+          }
         }
       }
     } catch (error: any) {
@@ -967,11 +994,38 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           await createProjectWorktree(projectName)
         }
       } else {
-        message.error({ 
-          content: `${projectName}: Push failed - ${result.error?.substring(0, 100)}`, 
-          key: `push-${projectName}`,
-          duration: 5
-        })
+        // Check if it's an authentication error
+        const errorMsg = result.error || ''
+        const isAuthError = errorMsg.includes('Authentication failed') || 
+                           errorMsg.includes('Access denied') ||
+                           errorMsg.includes('HTTP Basic')
+        
+        if (isAuthError) {
+          message.error({ 
+            content: (
+              <div>
+                <div><strong>{projectName}: Authentication Failed</strong></div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  Git credentials not configured. Open terminal and run:
+                </div>
+                <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 4, background: '#2a2a2a', padding: 4, borderRadius: 2 }}>
+                  git config --global credential.helper store
+                </div>
+                <div style={{ fontSize: 11, marginTop: 4 }}>
+                  Then try git push manually once to save credentials.
+                </div>
+              </div>
+            ),
+            key: `push-${projectName}`,
+            duration: 10
+          })
+        } else {
+          message.error({ 
+            content: `${projectName}: Push failed - ${errorMsg.substring(0, 100)}`, 
+            key: `push-${projectName}`,
+            duration: 5
+          })
+        }
       }
     } catch (error: any) {
       message.error(`${projectName}: Push failed - ${error.message}`)

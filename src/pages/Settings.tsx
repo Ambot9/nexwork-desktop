@@ -752,18 +752,24 @@ export function Settings() {
                                 shape="circle"
                                 size="large"
                                 icon={playingSound === sound.id ? <Square size={18} /> : <Play size={18} />}
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation()
                                   if (playingSound === sound.id) {
                                     stopNotificationSound()
                                     setPlayingSound(null)
                                   } else {
-                                    stopNotificationSound()
-                                    playNotificationSound(sound.id)
-                                    setPlayingSound(sound.id)
-                                    setTimeout(() => {
+                                    try {
+                                      stopNotificationSound()
+                                      setPlayingSound(sound.id)
+                                      await playNotificationSound(sound.id)
+                                      setTimeout(() => {
+                                        setPlayingSound(null)
+                                      }, parseFloat(sound.duration) * 1000)
+                                    } catch (error: any) {
                                       setPlayingSound(null)
-                                    }, parseFloat(sound.duration) * 1000)
+                                      message.error(`Failed to play sound: ${error.message || 'Unknown error'}`)
+                                      console.error('Sound playback error:', error)
+                                    }
                                   }
                                 }}
                               />

@@ -209,28 +209,51 @@ const audioBufferToWav = (buffer: AudioBuffer): ArrayBuffer => {
   return arrayBuffer
 }
 
-export const playNotificationSound = (soundType: string): void => {
-  // Stop current sound if playing
-  if (currentAudio) {
-    currentAudio.pause()
-    currentAudio = null
-  }
+export const playNotificationSound = (soundType: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Stop current sound if playing
+      if (currentAudio) {
+        currentAudio.pause()
+        currentAudio = null
+      }
 
-  // Generate and play new sound
-  const soundBlob = generateSound(soundType)
-  const soundUrl = URL.createObjectURL(soundBlob)
-  
-  currentAudio = new Audio(soundUrl)
-  currentAudio.volume = 0.5
-  
-  currentAudio.play().catch((error) => {
-    console.error('Error playing sound:', error)
+      // Generate and play new sound
+      const soundBlob = generateSound(soundType)
+      const soundUrl = URL.createObjectURL(soundBlob)
+      
+      currentAudio = new Audio(soundUrl)
+      currentAudio.volume = 0.5
+      
+      // Add error handler
+      currentAudio.onerror = (error) => {
+        console.error('Error loading audio:', error)
+        URL.revokeObjectURL(soundUrl)
+        currentAudio = null
+        reject(error)
+      }
+      
+      currentAudio.play()
+        .then(() => {
+          console.log(`Playing sound: ${soundType}`)
+          resolve()
+        })
+        .catch((error) => {
+          console.error('Error playing sound:', error)
+          URL.revokeObjectURL(soundUrl)
+          currentAudio = null
+          reject(error)
+        })
+
+      currentAudio.onended = () => {
+        URL.revokeObjectURL(soundUrl)
+        currentAudio = null
+      }
+    } catch (error) {
+      console.error('Error generating sound:', error)
+      reject(error)
+    }
   })
-
-  currentAudio.onended = () => {
-    URL.revokeObjectURL(soundUrl)
-    currentAudio = null
-  }
 }
 
 export const stopNotificationSound = (): void => {
