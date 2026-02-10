@@ -793,13 +793,18 @@ export function registerIpcHandlers() {
     try {
       const configManager = getConfigManager()
       
+      // Check if config exists, if not, initialize it
+      const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
+      if (!fs.existsSync(configPath)) {
+        console.log('Config not found, initializing...')
+        await configManager.initialize()
+      }
+      
       // Update user config
       const currentConfig = configManager.loadConfig()
       currentConfig.userConfig = config.userConfig
       
       // Save to file
-      const fs = require('fs')
-      const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
       fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2), 'utf-8')
       
       console.log('Config saved successfully')

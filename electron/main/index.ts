@@ -111,13 +111,13 @@ function startAutoCleanupService() {
     }
   }
   
-  // Run immediately on startup
-  setTimeout(checkExpiredFeatures, 5000) // Wait 5 seconds after startup
+  // Run first check after 60 seconds to avoid slowing startup
+  setTimeout(checkExpiredFeatures, 60000) // Wait 60 seconds after startup
   
   // Then check every hour
   autoCleanupInterval = setInterval(checkExpiredFeatures, 60 * 60 * 1000)
   
-  console.log('✅ Auto-cleanup service started (checking every hour)')
+  console.log('✅ Auto-cleanup service started (first check in 60s, then hourly)')
 }
 
 function stopAutoCleanupService() {
