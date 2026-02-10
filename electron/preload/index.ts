@@ -63,6 +63,31 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
       ipcRenderer.invoke('stats:syncWorktrees', featureName),
   },
 
+  // Settings & Storage (NEW)
+  settings: {
+    get: (key: string) => ipcRenderer.invoke('settings:get', key),
+    set: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
+    getAll: () => ipcRenderer.invoke('settings:getAll'),
+  },
+
+  // Feature History (NEW)
+  featureHistory: {
+    save: (feature: any) => ipcRenderer.invoke('features:saveHistory', feature),
+    getAll: (status?: string) => ipcRenderer.invoke('features:getHistory', status),
+    updateStatus: (id: string, status: string) => ipcRenderer.invoke('features:updateStatus', id, status),
+  },
+
+  // Activity Log (NEW)
+  activity: {
+    log: (activity: any) => ipcRenderer.invoke('activity:log', activity),
+    getRecent: (hours?: number) => ipcRenderer.invoke('activity:getRecent', hours),
+  },
+
+  // App Statistics (NEW)
+  appStats: {
+    get: () => ipcRenderer.invoke('stats:get'),
+  },
+
   // Terminal
   terminal: {
     create: (options: { cols: number, rows: number, cwd: string }) => 

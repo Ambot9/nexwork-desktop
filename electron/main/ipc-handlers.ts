@@ -1345,5 +1345,100 @@ export function registerIpcHandlers() {
     }
   })
 
+  // ==================== STORAGE & SETTINGS ====================
+  
+  ipcMain.handle('settings:get', async (_, key: string) => {
+    try {
+      const { storage } = await import('./storage')
+      const value = storage.getSetting(key as any)
+      return { success: true, value }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('settings:set', async (_, key: string, value: any) => {
+    try {
+      const { storage } = await import('./storage')
+      storage.setSetting(key as any, value)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('settings:getAll', async () => {
+    try {
+      const { storage } = await import('./storage')
+      const settings = storage.getAllSettings()
+      return { success: true, settings }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Feature history storage
+  ipcMain.handle('features:saveHistory', async (_, feature: any) => {
+    try {
+      const { storage } = await import('./storage')
+      const result = storage.saveFeature(feature)
+      return { success: true, id: result.id }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('features:getHistory', async (_, status?: string) => {
+    try {
+      const { storage } = await import('./storage')
+      const features = storage.getAllFeatures(status as any)
+      return { success: true, features }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('features:updateStatus', async (_, id: string, status: string) => {
+    try {
+      const { storage } = await import('./storage')
+      storage.updateFeatureStatus(id, status as any)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Activity logging
+  ipcMain.handle('activity:log', async (_, activity: any) => {
+    try {
+      const { storage } = await import('./storage')
+      const result = storage.logActivity(activity)
+      return { success: true, id: result.id }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('activity:getRecent', async (_, hours: number = 24) => {
+    try {
+      const { storage } = await import('./storage')
+      const activities = storage.getRecentActivity(hours)
+      return { success: true, activities }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Statistics
+  ipcMain.handle('stats:get', async () => {
+    try {
+      const { storage } = await import('./storage')
+      const stats = storage.getStats()
+      return { success: true, stats }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   console.log('✅ IPC handlers registered with real Nexwork CLI')
 }
