@@ -161,7 +161,8 @@ function createWindow() {
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
           "font-src 'self' data:; " +
-          "connect-src 'self';"
+          "connect-src 'self'; " +
+          "media-src 'self' blob:;"
         ]
       }
     })
