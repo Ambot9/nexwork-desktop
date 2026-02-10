@@ -1,6 +1,6 @@
-// Notification sound player utility with fallback
+// Notification sound player utility with fallback beep
 let currentAudio: HTMLAudioElement | null = null
-let isGeneratingSound = false
+let audioContext: AudioContext | null = null
 
 // Check if running in Electron
 const isElectron = () => {
@@ -35,27 +35,6 @@ const getSoundFiles = (): Record<string, string> => {
   }
 }
 
-// Generate a simple fallback beep sound
-const generateFallbackSound = (): string => {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-  const oscillator = audioContext.createOscillator()
-  const gainNode = audioContext.createGain()
-  
-  oscillator.connect(gainNode)
-  gainNode.connect(audioContext.destination)
-  
-  oscillator.frequency.value = 880
-  oscillator.type = 'sine'
-  
-  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-  
-  oscillator.start(audioContext.currentTime)
-  oscillator.stop(audioContext.currentTime + 0.5)
-  
-  return 'generated'
-}
-
 // Get sound duration
 const getSoundDuration = (type: string): number => {
   const durations: Record<string, number> = {
@@ -73,97 +52,102 @@ const getSoundDuration = (type: string): number => {
   return durations[type] || 2
 }
 
+// Play fallback beep using Web Audio API
+const playFallbackBeep = (): void => {
+  try {
+    // Create audio context if not exists
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    
+    // Create oscillator for beep
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    // Configure beep sound
+    oscillator.frequency.value = 880 // A5 note
+    oscillator.type = 'sine'
+    
+    // Volume envelope
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+    
+    // Play
+    oscillator.start(audioContext.currentTime)
+    oscillator.stop(audioContext.currentTime + 0.3)
+    
+    console.log('Playing fallback beep')
+  } catch (error) {
+    console.error('Fallback beep failed:', error)
+  }
+}
+
 export const playNotificationSound = (soundType: string): Promise<void> => {
   return new Promise((resolve, reject) => {
-    try {
-      // Stop current sound if playing
-      if (currentAudio) {
-        currentAudio.pause()
-        currentAudio = null
-      }
-
-      // Get sound file path
-      const soundFiles = getSoundFiles()
-      const soundFile = soundFiles[soundType] || soundFiles['codeComplete']
-      
-      // Create audio element
-      currentAudio = new Audio(soundFile)
-      currentAudio.volume = 0.5
-      
-      // Track if we successfully loaded
-      let hasError = false
-      
-      // Add error handler with fallback
-      currentAudio.onerror = () => {
-        hasError = true
-        console.warn(`Sound file not found: ${soundFile}`)
-        currentAudio = null
-        
-        // Try fallback beep
-        try {
-          if (!isGeneratingSound) {
-            isGeneratingSound = true
-            generateFallbackSound()
-            setTimeout(() => {
-              isGeneratingSound = false
-            }, 600)
-          }
-          resolve() // Resolve anyway with fallback
-        } catch (fallbackError) {
-          reject(new Error(`Sound file not found: ${soundType}. Please add MP3 files to the sounds folder.`))
-        }
-      }
-      
-      // Play the sound
-      currentAudio.play()
-        .then(() => {
-          if (!hasError) {
-            console.log(`Playing sound: ${soundType}`)
-            resolve()
-          }
+    const soundFiles = getSoundFiles()
+    const soundFile = soundFiles[soundType] || soundFiles['codeComplete']
+    
+    console.log(`Attempting to play: ${soundType} from ${soundFile}`)
+    
+    // Create audio element for file
+    const audio = new Audio(soundFile)
+    audio.volume = 0.5
+    
+    let resolved = false
+    
+    // Success handler
+    audio.oncanplaythrough = () => {
+      if (!resolved) {
+        resolved = true
+        console.log(`Playing file: ${soundType}`)
+        audio.play().then(() => {
+          currentAudio = audio
+          resolve()
+        }).catch((error) => {
+          console.warn(`Play failed for ${soundType}, using fallback`)
+          playFallbackBeep()
+          resolve()
         })
-        .catch((error) => {
-          console.error('Error playing sound:', error)
-          currentAudio = null
-          
-          // Try fallback
-          try {
-            if (!isGeneratingSound) {
-              isGeneratingSound = true
-              generateFallbackSound()
-              setTimeout(() => {
-                isGeneratingSound = false
-              }, 600)
-            }
-            resolve() // Resolve with fallback
-          } catch (fallbackError) {
-            reject(new Error(`Failed to play sound: ${soundType}`))
-          }
-        })
-
-      // Cleanup when done
-      currentAudio.onended = () => {
-        currentAudio = null
-      }
-    } catch (error) {
-      console.error('Error in playNotificationSound:', error)
-      
-      // Final fallback
-      try {
-        generateFallbackSound()
-        resolve()
-      } catch {
-        reject(error)
       }
     }
+    
+    // Error handler - use fallback
+    audio.onerror = () => {
+      if (!resolved) {
+        resolved = true
+        console.warn(`File not found: ${soundFile}, using fallback beep`)
+        playFallbackBeep()
+        resolve() // Resolve anyway with fallback
+      }
+    }
+    
+    // Load the audio
+    audio.load()
+    
+    // Timeout fallback
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true
+        console.warn(`Timeout for ${soundType}, using fallback beep`)
+        playFallbackBeep()
+        resolve()
+      }
+    }, 1000)
   })
 }
 
 export const stopNotificationSound = (): void => {
+  // Stop file audio
   if (currentAudio) {
     currentAudio.pause()
     currentAudio = null
   }
+  
+  // Note: Web Audio API oscillators can't be stopped globally
+  // They stop automatically after their duration
 }
 
 // Check if sound files exist
