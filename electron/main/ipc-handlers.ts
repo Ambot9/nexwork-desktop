@@ -777,9 +777,15 @@ export function registerIpcHandlers() {
       const configManager = getConfigManager()
       const config = configManager.loadConfig()
       
+      // Convert projectLocations object to projects array for frontend
+      const projects = Object.entries(config.projectLocations || {}).map(([name, projectPath]) => ({
+        name,
+        path: projectPath
+      }))
+      
       return {
         workspaceRoot: currentWorkspaceRoot,
-        projects: config.projects || [],
+        projects: projects,
         features: config.features || [],
         userConfig: config.userConfig || {
           defaultTemplate: 'default'
