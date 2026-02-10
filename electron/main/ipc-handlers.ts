@@ -833,6 +833,23 @@ export function registerIpcHandlers() {
 
       currentWorkspaceRoot = workspacePath
       console.log('Workspace set to:', currentWorkspaceRoot)
+      
+      // Initialize config for new workspace and discover projects
+      try {
+        const configManager = getConfigManager()
+        
+        // Check if config exists, if not initialize it
+        const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
+        if (!fs.existsSync(configPath)) {
+          console.log('Initializing config for new workspace...')
+          await configManager.initialize()
+        }
+        
+        console.log('Projects discovered for workspace:', currentWorkspaceRoot)
+      } catch (initError) {
+        console.warn('Could not initialize config:', initError)
+        // Don't throw - workspace is still set, config can be created later
+      }
     } catch (error: any) {
       console.error('Failed to set workspace:', error)
       throw new Error(`Failed to set workspace: ${error.message}`)

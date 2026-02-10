@@ -208,7 +208,7 @@ export function Settings() {
       const selectedPath = await window.nexworkAPI.selectFolder()
       
       if (selectedPath) {
-        // Update the workspace in the backend first
+        // Update the workspace in the backend first (this also discovers projects)
         await window.nexworkAPI.config.setWorkspace(selectedPath)
         
         // Update form field
@@ -219,8 +219,11 @@ export function Settings() {
         
         message.success(`Workspace updated to: ${selectedPath}`)
         
-        // Note: We don't reload settings here because it would overwrite our local update
-        // The display now shows the correct path immediately
+        // Reload settings to get discovered projects
+        // Use a small delay to ensure backend has finished initializing
+        setTimeout(async () => {
+          await loadSettings()
+        }, 500)
       }
     } catch (error: any) {
       console.error('Failed to select workspace:', error)
