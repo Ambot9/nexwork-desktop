@@ -214,6 +214,9 @@ export function Settings() {
         // Update the workspace in the backend
         await window.nexworkAPI.config.setWorkspace(selectedPath)
         
+        // Update local config state immediately to refresh the display
+        setConfig(prev => prev ? { ...prev, workspaceRoot: selectedPath } : null)
+        
         message.success(`Workspace updated to: ${selectedPath}`)
         
         // Reload settings to refresh project list
