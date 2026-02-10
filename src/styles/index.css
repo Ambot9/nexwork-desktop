@@ -71,3 +71,20 @@ body {
   -webkit-app-region: drag;
   height: 28px;
 }
+
+/* Position Ant Design messages at top right */
+.ant-message {
+  top: 24px !important;
+  right: 24px !important;
+  left: auto !important;
+  transform: none !important;
+}
+
+.ant-message-notice {
+  text-align: right !important;
+  padding-right: 0 !important;
+}
+
+.ant-message-notice-content {
+  display: inline-block !important;
+}

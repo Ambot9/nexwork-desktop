@@ -34,6 +34,16 @@ function App() {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken()
 
+  // Configure message position to top right
+  message.config({
+    top: 24,
+    duration: 3,
+    maxCount: 3,
+    rtl: false,
+    prefixCls: 'my-message',
+    getContainer: () => document.body
+  })
+
   useEffect(() => {
     loadFeatures()
 
