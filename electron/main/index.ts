@@ -40,12 +40,23 @@ let autoCleanupInterval: NodeJS.Timeout | null = null
 
 // Auto-cleanup service for expired features
 function startAutoCleanupService() {
-  const workspaceRoot = path.join(os.homedir(), 'Documents/Techbodia')
-  
   // Check every hour
   const checkExpiredFeatures = async () => {
     try {
+      // Import the current workspace from ipc-handlers
+      // This will be empty until user sets it
       console.log('🔍 Checking for expired features...')
+      
+      // Get workspace from the global in ipc-handlers
+      // We need to import it dynamically to get the current value
+      const ipcHandlers = require('./ipc-handlers')
+      const workspaceRoot = ipcHandlers.currentWorkspaceRoot
+      
+      if (!workspaceRoot) {
+        console.log('⏭️ No workspace set yet, skipping cleanup')
+        return
+      }
+      
       const configManager = new ConfigManager(workspaceRoot)
       const features = configManager.getAllFeatures()
       const now = new Date()

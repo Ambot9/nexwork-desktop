@@ -27,8 +27,8 @@ const { TemplateManager } = require('multi-repo-orchestrator/dist/core/template-
 // Helper for async exec
 const execAsync = promisify(exec)
 
-// Global workspace root
-let currentWorkspaceRoot: string = path.join(os.homedir(), 'Documents/Techbodia')
+// Global workspace root - empty by default for first-time setup
+let currentWorkspaceRoot: string = ''
 
 // Helper to get ConfigManager instance
 function getConfigManager(): ConfigManager {
@@ -762,24 +762,34 @@ export function registerIpcHandlers() {
   // Config
   ipcMain.handle('config:load', async () => {
     try {
+      // Check if workspace is set
+      if (!currentWorkspaceRoot) {
+        return {
+          workspaceRoot: '',
+          projects: [],
+          features: [],
+          userConfig: {
+            defaultTemplate: 'default'
+          }
+        }
+      }
+      
       const configManager = getConfigManager()
       const config = configManager.loadConfig()
       
-      // Convert projectLocations object to projects array for the UI
-      const projects = Object.keys(config.projectLocations || {}).map(name => ({
-        name,
-        path: config.projectLocations[name]
-      }))
-      
       return {
-        ...config,
-        projects
+        workspaceRoot: currentWorkspaceRoot,
+        projects: config.projects || [],
+        features: config.features || [],
+        userConfig: config.userConfig || {
+          defaultTemplate: 'default'
+        }
       }
     } catch (error: any) {
       console.error('Failed to load config:', error)
-      // Return default config
+      // Return empty config for first-time setup
       return {
-        workspaceRoot: currentWorkspaceRoot,
+        workspaceRoot: currentWorkspaceRoot || '',
         projects: [],
         features: [],
         userConfig: {
@@ -1442,3 +1452,6 @@ export function registerIpcHandlers() {
 
   console.log('✅ IPC handlers registered with real Nexwork CLI')
 }
+
+// Export for use in other modules
+export { currentWorkspaceRoot }
