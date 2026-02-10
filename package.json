@@ -69,10 +69,6 @@
       "artifactName": "${productName}_${version}_macOS.${ext}",
       "target": [
         {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        },
-        {
           "target": "zip",
           "arch": ["x64", "arm64"]
         }
@@ -80,11 +76,16 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": null,
+      "signIgnore": [
+        "node_modules"
+      ]
     },
     "dmg": {
       "title": "${productName} ${version}",
       "icon": "build/icon.png",
+      "format": "UDZO",
       "window": {
         "width": 540,
         "height": 380

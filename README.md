@@ -23,7 +23,40 @@ Beautiful desktop application for Nexwork - Multi-repository feature management 
 
 ## 📦 Installation
 
-### Development
+### For Users (Download Release)
+
+#### macOS Installation
+
+1. **Download** the latest `.dmg` from [Releases](https://github.com/Ambot9/nexwork-desktop/releases)
+2. **Open** the DMG file
+3. **Drag** Nexwork to Applications folder
+4. **First Launch**: You may see a "damaged" warning. This is normal for unsigned apps.
+
+**Fix "Damaged" Warning:**
+
+Open Terminal and run:
+```bash
+xattr -cr /Applications/Nexwork.app
+```
+
+Then launch Nexwork normally. This only needs to be done once.
+
+**Alternative Method:**
+- Right-click Nexwork.app → Select "Open" → Click "Open" in the dialog
+
+#### Windows Installation
+
+1. Download the `.exe` installer from [Releases](https://github.com/Ambot9/nexwork-desktop/releases)
+2. Run the installer
+3. Follow the installation wizard
+
+#### Linux Installation
+
+1. Download the `.AppImage` from [Releases](https://github.com/Ambot9/nexwork-desktop/releases)
+2. Make it executable: `chmod +x Nexwork*.AppImage`
+3. Run: `./Nexwork*.AppImage`
+
+### For Developers
 
 ```bash
 # Install dependencies
@@ -31,11 +64,7 @@ npm install
 
 # Start development server
 npm run dev
-```
 
-### Production
-
-```bash
 # Build for production
 npm run build
 
