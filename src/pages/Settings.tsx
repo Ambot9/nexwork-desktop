@@ -317,7 +317,7 @@ export function Settings() {
                         <div>• <code>projects/*</code> - All folders in 'projects' directory</div>
                       </div>
                     }
-                    overlayStyle={{ maxWidth: 400 }}
+                    styles={{ root: { maxWidth: 400 } }}
                   >
                     <HelpCircle size={14} style={{ color: '#1890ff', cursor: 'help' }} />
                   </Tooltip>
@@ -499,7 +499,7 @@ export function Settings() {
                         <div style={{ marginTop: 8 }}>Use <code>@ai</code> commands in the terminal</div>
                       </div>
                     }
-                    overlayStyle={{ maxWidth: 300 }}
+                    styles={{ root: { maxWidth: 300 } }}
                   >
                     <HelpCircle size={14} style={{ color: '#1890ff', cursor: 'help' }} />
                   </Tooltip>
@@ -664,7 +664,7 @@ export function Settings() {
                     <div style={{ marginTop: 8 }}>Choose a sound that suits your workflow!</div>
                   </div>
                 }
-                overlayStyle={{ maxWidth: 350 }}
+                styles={{ root: { maxWidth: 350 } }}
               >
                 <Info size={16} style={{ color: '#888', cursor: 'help' }} />
               </Tooltip>
@@ -838,7 +838,7 @@ export function Settings() {
                         <div>• <strong>jira:</strong> feature/PROJ-123-my-feature</div>
                       </div>
                     }
-                    overlayStyle={{ maxWidth: 350 }}
+                    styles={{ root: { maxWidth: 350 } }}
                   >
                     <HelpCircle size={14} style={{ color: '#1890ff', cursor: 'help' }} />
                   </Tooltip>
