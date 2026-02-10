@@ -1,4 +1,4 @@
-// Notification sound player utility with fallback beep
+// Notification sound player utility with unique fallbacks
 let currentAudio: HTMLAudioElement | null = null
 let audioContext: AudioContext | null = null
 
@@ -52,37 +52,181 @@ const getSoundDuration = (type: string): number => {
   return durations[type] || 2
 }
 
-// Play fallback beep using Web Audio API
-const playFallbackBeep = (): void => {
+// Play unique fallback sound based on type
+const playFallbackSound = (type: string): void => {
   try {
-    // Create audio context if not exists
     if (!audioContext) {
       audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
     }
     
-    // Create oscillator for beep
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
+    const now = audioContext.currentTime
     
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
+    // Different sounds for each type
+    switch (type) {
+      case 'shamisen':
+        // Japanese pluck - high pitched
+        playTone(880, 0.3, 0.3, 'triangle')
+        break
+        
+      case 'arcade':
+        // Retro game - ascending
+        playGlide(440, 880, 0.5, 0.3)
+        break
+        
+      case 'ping':
+        // Clean bell - very short high
+        playTone(1046, 0.15, 0.2, 'sine')
+        break
+        
+      case 'quickPing':
+        // Double beep
+        playTone(880, 0.1, 0.2, 'sine')
+        setTimeout(() => playTone(880, 0.1, 0.2, 'sine'), 150)
+        break
+        
+      case 'agentDone':
+        // Success chord - C major
+        playChord([523, 659, 784], 0.8, 0.3)
+        break
+        
+      case 'codeComplete':
+        // Triumphant - arpeggio
+        playTone(523, 0.2, 0.3, 'sine')
+        setTimeout(() => playTone(659, 0.2, 0.3, 'sine'), 200)
+        setTimeout(() => playTone(784, 0.4, 0.3, 'sine'), 400)
+        break
+        
+      case 'afrobeatComplete':
+        // Rhythmic - bass with melody
+        playTone(196, 0.1, 0.4, 'square') // G3 bass
+        setTimeout(() => playTone(523, 0.2, 0.3, 'sine'), 200)
+        setTimeout(() => playTone(196, 0.1, 0.4, 'square'), 400)
+        break
+        
+      case 'longEDM':
+        // Long ambient - low pulse
+        playPulse(110, 2.0, 0.3)
+        break
+        
+      case 'comeBack':
+        // Attention - warbling
+        playWarble(700, 150, 6, 1.5, 0.3)
+        break
+        
+      case 'shabalaba':
+        // Cheerful - ding dong
+        playTone(880, 0.25, 0.3, 'sine')
+        setTimeout(() => playTone(659, 0.25, 0.3, 'sine'), 300)
+        break
+        
+      default:
+        playTone(880, 0.3, 0.3, 'sine')
+    }
     
-    // Configure beep sound
-    oscillator.frequency.value = 880 // A5 note
-    oscillator.type = 'sine'
-    
-    // Volume envelope
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
-    
-    // Play
-    oscillator.start(audioContext.currentTime)
-    oscillator.stop(audioContext.currentTime + 0.3)
-    
-    console.log('Playing fallback beep')
+    console.log(`Playing unique fallback: ${type}`)
   } catch (error) {
-    console.error('Fallback beep failed:', error)
+    console.error('Fallback sound failed:', error)
   }
+}
+
+// Helper: Play single tone
+const playTone = (freq: number, duration: number, volume: number, type: OscillatorType = 'sine'): void => {
+  if (!audioContext) return
+  
+  const osc = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  
+  osc.connect(gain)
+  gain.connect(audioContext.destination)
+  
+  osc.frequency.value = freq
+  osc.type = type
+  
+  gain.gain.setValueAtTime(volume, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+  
+  osc.start(audioContext.currentTime)
+  osc.stop(audioContext.currentTime + duration)
+}
+
+// Helper: Play chord (multiple frequencies)
+const playChord = (freqs: number[], duration: number, volume: number): void => {
+  freqs.forEach((freq, i) => {
+    setTimeout(() => playTone(freq, duration - (i * 0.1), volume * (1 - i * 0.2)), i * 50)
+  })
+}
+
+// Helper: Glide/frequency sweep
+const playGlide = (startFreq: number, endFreq: number, duration: number, volume: number): void => {
+  if (!audioContext) return
+  
+  const osc = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  
+  osc.connect(gain)
+  gain.connect(audioContext.destination)
+  
+  osc.frequency.setValueAtTime(startFreq, audioContext.currentTime)
+  osc.frequency.linearRampToValueAtTime(endFreq, audioContext.currentTime + duration)
+  osc.type = 'square'
+  
+  gain.gain.setValueAtTime(volume, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+  
+  osc.start(audioContext.currentTime)
+  osc.stop(audioContext.currentTime + duration)
+}
+
+// Helper: Warbling sound
+const playWarble = (baseFreq: number, variance: number, speed: number, duration: number, volume: number): void => {
+  if (!audioContext) return
+  
+  const osc = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  const lfo = audioContext.createOscillator()
+  const lfoGain = audioContext.createGain()
+  
+  lfo.connect(lfoGain)
+  lfoGain.connect(osc.frequency)
+  osc.connect(gain)
+  gain.connect(audioContext.destination)
+  
+  osc.frequency.value = baseFreq
+  osc.type = 'sine'
+  lfo.frequency.value = speed
+  lfoGain.gain.value = variance
+  
+  gain.gain.setValueAtTime(volume, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+  
+  lfo.start(audioContext.currentTime)
+  osc.start(audioContext.currentTime)
+  osc.stop(audioContext.currentTime + duration)
+  lfo.stop(audioContext.currentTime + duration)
+}
+
+// Helper: Low pulse
+const playPulse = (freq: number, duration: number, volume: number): void => {
+  if (!audioContext) return
+  
+  const osc = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  
+  osc.connect(gain)
+  gain.connect(audioContext.destination)
+  
+  osc.frequency.value = freq
+  osc.type = 'sawtooth'
+  
+  // Create pulsing effect
+  const now = audioContext.currentTime
+  for (let i = 0; i < duration; i += 0.5) {
+    gain.gain.setValueAtTime(volume, now + i)
+    gain.gain.exponentialRampToValueAtTime(0.01, now + i + 0.4)
+  }
+  
+  osc.start(now)
+  osc.stop(now + duration)
 }
 
 export const playNotificationSound = (soundType: string): Promise<void> => {
@@ -92,7 +236,6 @@ export const playNotificationSound = (soundType: string): Promise<void> => {
     
     console.log(`Attempting to play: ${soundType} from ${soundFile}`)
     
-    // Create audio element for file
     const audio = new Audio(soundFile)
     audio.volume = 0.5
     
@@ -108,19 +251,19 @@ export const playNotificationSound = (soundType: string): Promise<void> => {
           resolve()
         }).catch((error) => {
           console.warn(`Play failed for ${soundType}, using fallback`)
-          playFallbackBeep()
+          playFallbackSound(soundType)
           resolve()
         })
       }
     }
     
-    // Error handler - use fallback
+    // Error handler - use unique fallback
     audio.onerror = () => {
       if (!resolved) {
         resolved = true
-        console.warn(`File not found: ${soundFile}, using fallback beep`)
-        playFallbackBeep()
-        resolve() // Resolve anyway with fallback
+        console.warn(`File not found: ${soundFile}`)
+        playFallbackSound(soundType) // Each type gets unique sound!
+        resolve()
       }
     }
     
@@ -131,8 +274,8 @@ export const playNotificationSound = (soundType: string): Promise<void> => {
     setTimeout(() => {
       if (!resolved) {
         resolved = true
-        console.warn(`Timeout for ${soundType}, using fallback beep`)
-        playFallbackBeep()
+        console.warn(`Timeout for ${soundType}`)
+        playFallbackSound(soundType) // Each type gets unique sound!
         resolve()
       }
     }, 1000)
@@ -140,14 +283,10 @@ export const playNotificationSound = (soundType: string): Promise<void> => {
 }
 
 export const stopNotificationSound = (): void => {
-  // Stop file audio
   if (currentAudio) {
     currentAudio.pause()
     currentAudio = null
   }
-  
-  // Note: Web Audio API oscillators can't be stopped globally
-  // They stop automatically after their duration
 }
 
 // Check if sound files exist
