@@ -89,19 +89,7 @@
     "dmg": {
       "title": "${productName} ${version}",
       "icon": "build/icon.png",
-      "sign": false,
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
+      "sign": false
     },
     "win": {
       "icon": "build/icon.png",
