@@ -94,6 +94,7 @@
         "node_modules"
       ]
     },
+    "npmRebuild": true,
     "dmg": {
       "title": "${productName} ${version}",
       "icon": "build/icon.png",
