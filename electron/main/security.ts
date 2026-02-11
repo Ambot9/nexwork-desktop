@@ -68,11 +68,14 @@ export function sanitizeFeatureName(featureName: string): string {
     throw new Error('Invalid feature name')
   }
 
-  // Remove dangerous characters
+  // Remove dangerous characters and convert to valid git branch name
   const sanitized = featureName
     .replace(/[;&|`$(){}[\]<>]/g, '') // Command injection chars
     .replace(/\.\./g, '') // Directory traversal
     .replace(/[\/\\]/g, '-') // Path separators
+    .replace(/\s+/g, '-') // Convert spaces to dashes
+    .replace(/-+/g, '-') // Remove consecutive dashes
+    .replace(/^-|-$/g, '') // Remove leading/trailing dashes
     .trim()
 
   if (sanitized.length === 0) {

@@ -376,6 +376,13 @@ export function registerIpcHandlers() {
         throw new Error('At least one project must be selected')
       }
       
+      // Sanitize feature name for git branch compatibility
+      const sanitizedFeatureName = sanitizeFeatureName(data.name)
+      console.log('Sanitized feature name:', sanitizedFeatureName)
+      
+      // Use sanitized name for branch creation
+      data.name = sanitizedFeatureName
+      
       const configManager = getConfigManager()
       const templateManager = new TemplateManager(currentWorkspaceRoot)
       
