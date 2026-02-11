@@ -125,36 +125,103 @@ export function Settings() {
       setConfig(configData)
       setAvailableTemplates(templates)
       
-      // Load notification preferences
-      const savedNotifEnabled = localStorage.getItem('notificationSoundsEnabled')
-      const savedSound = localStorage.getItem('notificationSound')
-      if (savedNotifEnabled !== null) {
-        setNotificationSoundsEnabled(savedNotifEnabled === 'true')
-      }
-      if (savedSound) {
-        setSelectedSound(savedSound)
+      // Load notification preferences from electron-store (more reliable than localStorage)
+      try {
+        const [notifEnabledRes, soundRes, aiEnabledRes, aiProviderRes, aiApiKeyRes, aiModelRes, templateRes, searchPathsRes, excludeRes] = await Promise.all([
+          window.nexworkAPI.settings.get('notificationSoundsEnabled'),
+          window.nexworkAPI.settings.get('notificationSound'),
+          window.nexworkAPI.settings.get('aiEnabled'),
+          window.nexworkAPI.settings.get('aiProvider'),
+          window.nexworkAPI.settings.get('aiApiKey'),
+          window.nexworkAPI.settings.get('aiModel'),
+          window.nexworkAPI.settings.get('defaultTemplate'),
+          window.nexworkAPI.settings.get('searchPaths'),
+          window.nexworkAPI.settings.get('exclude')
+        ])
+        
+        // Apply saved settings if they exist
+        if (notifEnabledRes.success && notifEnabledRes.value !== undefined) {
+          setNotificationSoundsEnabled(notifEnabledRes.value)
+        } else {
+          // Fallback to localStorage
+          const savedNotifEnabled = localStorage.getItem('notificationSoundsEnabled')
+          if (savedNotifEnabled !== null) {
+            setNotificationSoundsEnabled(savedNotifEnabled === 'true')
+          }
+        }
+        
+        if (soundRes.success && soundRes.value) {
+          setSelectedSound(soundRes.value)
+        } else {
+          // Fallback to localStorage
+          const savedSound = localStorage.getItem('notificationSound')
+          if (savedSound) {
+            setSelectedSound(savedSound)
+          }
+        }
+        
+        // Load AI settings
+        if (aiEnabledRes.success && aiEnabledRes.value !== undefined) {
+          setAiEnabled(aiEnabledRes.value)
+        }
+        
+        // Build form values from electron-store settings or config
+        const formValues: any = {
+          workspaceRoot: configData.workspaceRoot,
+          searchPaths: searchPathsRes.success && searchPathsRes.value 
+            ? searchPathsRes.value 
+            : (configData.userConfig?.searchPaths?.join(', ') || '*'),
+          exclude: excludeRes.success && excludeRes.value 
+            ? excludeRes.value 
+            : (configData.userConfig?.exclude?.join(', ') || 'node_modules, dist, build'),
+          defaultTemplate: templateRes.success && templateRes.value 
+            ? templateRes.value 
+            : (configData.userConfig?.defaultTemplate || 'default'),
+          aiProvider: aiProviderRes.success && aiProviderRes.value 
+            ? aiProviderRes.value 
+            : (configData.userConfig?.ai?.provider || 'claude'),
+          aiApiKey: aiApiKeyRes.success && aiApiKeyRes.value 
+            ? aiApiKeyRes.value 
+            : (configData.userConfig?.ai?.apiKey || ''),
+          aiModel: aiModelRes.success && aiModelRes.value 
+            ? aiModelRes.value 
+            : (configData.userConfig?.ai?.model || 'claude-3-5-sonnet-20241022')
+        }
+        
+        form.setFieldsValue(formValues)
+      } catch (storageError) {
+        console.warn('Could not load from electron-store, using localStorage fallback:', storageError)
+        
+        // Fallback to localStorage
+        const savedNotifEnabled = localStorage.getItem('notificationSoundsEnabled')
+        const savedSound = localStorage.getItem('notificationSound')
+        if (savedNotifEnabled !== null) {
+          setNotificationSoundsEnabled(savedNotifEnabled === 'true')
+        }
+        if (savedSound) {
+          setSelectedSound(savedSound)
+        }
+        
+        // Set form values from config
+        const formValues = {
+          workspaceRoot: configData.workspaceRoot,
+          searchPaths: configData.userConfig?.searchPaths?.join(', ') || '*',
+          exclude: configData.userConfig?.exclude?.join(', ') || 'node_modules, dist, build',
+          defaultTemplate: configData.userConfig?.defaultTemplate || 'default',
+          aiProvider: configData.userConfig?.ai?.provider || 'claude',
+          aiApiKey: configData.userConfig?.ai?.apiKey || '',
+          aiModel: configData.userConfig?.ai?.model || 'claude-3-5-sonnet-20241022'
+        }
+        
+        setAiEnabled(!!configData.userConfig?.ai?.enabled)
+        form.setFieldsValue(formValues)
       }
       
-      // Load startup preference
+      // Load startup preference from localStorage
       const savedStartup = localStorage.getItem('startOnStartup')
       if (savedStartup !== null) {
         setStartOnStartup(savedStartup === 'true')
       }
-      
-      // Set form values
-      const formValues = {
-        workspaceRoot: configData.workspaceRoot,
-        searchPaths: configData.userConfig?.searchPaths?.join(', ') || '*',
-        exclude: configData.userConfig?.exclude?.join(', ') || 'node_modules, dist, build',
-        defaultTemplate: configData.userConfig?.defaultTemplate || 'default',
-        aiProvider: configData.userConfig?.ai?.provider || 'claude',
-        aiApiKey: configData.userConfig?.ai?.apiKey || '',
-        aiModel: configData.userConfig?.ai?.model || 'claude-3-5-sonnet-20241022'
-      }
-      
-      setAiEnabled(!!configData.userConfig?.ai?.enabled)
-      
-      form.setFieldsValue(formValues)
       
       // Force form to re-render to show values
       setTimeout(() => {
@@ -189,9 +256,20 @@ export function Settings() {
       
       await window.nexworkAPI.config.save(updatedConfig)
       
-      // Save notification preferences
+      // Save notification preferences to localStorage (for quick access)
       localStorage.setItem('notificationSoundsEnabled', notificationSoundsEnabled.toString())
       localStorage.setItem('notificationSound', selectedSound)
+      
+      // Save all settings to electron-store for persistence
+      await window.nexworkAPI.settings.set('notificationSoundsEnabled', notificationSoundsEnabled)
+      await window.nexworkAPI.settings.set('notificationSound', selectedSound)
+      await window.nexworkAPI.settings.set('aiEnabled', aiEnabled)
+      await window.nexworkAPI.settings.set('aiProvider', values.aiProvider)
+      await window.nexworkAPI.settings.set('aiApiKey', values.aiApiKey)
+      await window.nexworkAPI.settings.set('aiModel', values.aiModel)
+      await window.nexworkAPI.settings.set('defaultTemplate', values.defaultTemplate)
+      await window.nexworkAPI.settings.set('searchPaths', values.searchPaths)
+      await window.nexworkAPI.settings.set('exclude', values.exclude)
       
       message.success('Settings saved successfully!')
       setConfig(updatedConfig)
