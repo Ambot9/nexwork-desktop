@@ -232,7 +232,22 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Load saved settings and restore workspace
+  try {
+    const { storage } = await import('./storage')
+    const lastWorkspace = storage.getSetting('lastWorkspace')
+    
+    if (lastWorkspace) {
+      console.log('🔄 Restoring workspace from settings:', lastWorkspace)
+      // Import and set the workspace
+      const ipcHandlers = await import('./ipc-handlers')
+      await ipcHandlers.setWorkspaceOnStartup(lastWorkspace)
+    }
+  } catch (error) {
+    console.error('❌ Failed to restore workspace:', error)
+  }
+  
   registerIpcHandlers()
   createWindow()
   

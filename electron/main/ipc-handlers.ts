@@ -840,11 +840,20 @@ export function registerIpcHandlers() {
       currentWorkspaceRoot = workspacePath
       console.log('Workspace set to:', currentWorkspaceRoot)
       
+      // Save to settings for persistence
+      try {
+        const { storage } = await import('./storage')
+        storage.setSetting('lastWorkspace', workspacePath)
+        console.log('💾 Workspace saved to settings')
+      } catch (storageError) {
+        console.warn('⚠️ Could not save workspace to settings:', storageError)
+      }
+      
       // Initialize config for new workspace and discover projects
       try {
         const configManager = getConfigManager()
         
-        // Check if config exists, if not initialize it
+        // Check if config exists, if not, initialize it
         const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
         if (!fs.existsSync(configPath)) {
           console.log('Initializing config for new workspace...')
@@ -1478,3 +1487,35 @@ export function registerIpcHandlers() {
 
 // Export for use in other modules
 export { currentWorkspaceRoot }
+
+// Helper function to set workspace on app startup (restores from settings)
+export async function setWorkspaceOnStartup(workspacePath: string): Promise<void> {
+  try {
+    // Security: Validate workspace path
+    if (!validateWorkspacePath(workspacePath)) {
+      console.warn('⚠️ Invalid workspace path in settings:', workspacePath)
+      return
+    }
+
+    currentWorkspaceRoot = workspacePath
+    console.log('✅ Workspace restored on startup:', currentWorkspaceRoot)
+    
+    // Initialize config for the workspace
+    try {
+      const configManager = getConfigManager()
+      
+      // Check if config exists, if not initialize it
+      const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
+      if (!fs.existsSync(configPath)) {
+        console.log('📝 Initializing config for restored workspace...')
+        await configManager.initialize()
+      }
+      
+      console.log('✅ Projects loaded for workspace:', currentWorkspaceRoot)
+    } catch (initError) {
+      console.warn('⚠️ Could not initialize config on startup:', initError)
+    }
+  } catch (error: any) {
+    console.error('❌ Failed to set workspace on startup:', error)
+  }
+}
