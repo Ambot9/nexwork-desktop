@@ -7,16 +7,17 @@ import { updateTrayMenu } from './tray'
 import { notifyFeatureCreated, notifyFeatureCompleted, notifyProjectStatusChanged } from './notifications'
 import { promisify } from 'util'
 import { exec } from 'child_process'
+import { log } from './log'
 import {
   validateWorkspacePath,
   sanitizeFeatureName,
-  validateBranchName,
-  isPathInWorkspace,
-  sanitizeCommand,
-  validateProjectName,
-  featureOperationLimiter,
-  gitOperationLimiter,
-  terminalLimiter
+  validateBranchName as _validateBranchName,
+  isPathInWorkspace as _isPathInWorkspace,
+  sanitizeCommand as _sanitizeCommand,
+  validateProjectName as _validateProjectName,
+  featureOperationLimiter as _featureOperationLimiter,
+  gitOperationLimiter as _gitOperationLimiter,
+  terminalLimiter as _terminalLimiter,
 } from './security'
 
 // Import Nexwork CLI components - using require for CommonJS modules
@@ -30,8 +31,15 @@ const execAsync = promisify(exec)
 // Global workspace root - empty by default for first-time setup
 let currentWorkspaceRoot: string = ''
 
+// Helper to ensure workspace is set before operations that need it
+function requireWorkspace(): void {
+  if (!currentWorkspaceRoot) {
+    throw new Error('No workspace is set. Please select a workspace in Settings first.')
+  }
+}
+
 // Helper to get ConfigManager instance
-function getConfigManager(): ConfigManager {
+function getConfigManager(): InstanceType<typeof ConfigManager> {
   return new ConfigManager(currentWorkspaceRoot)
 }
 
@@ -43,106 +51,104 @@ function updateTrayWithFeatures() {
   try {
     const configManager = getConfigManager()
     const features = configManager.getAllFeatures()
-    
+
     const total = features.length
-    const inProgress = features.filter(f => 
-      f.projects.some(p => p.status === 'in_progress')
-    ).length
-    const completed = features.filter(f =>
-      f.projects.every(p => p.status === 'completed')
-    ).length
+    const inProgress = features.filter((f: any) => f.projects.some((p: any) => p.status === 'in_progress')).length
+    const completed = features.filter((f: any) => f.projects.every((p: any) => p.status === 'completed')).length
 
     updateTrayMenu(mainWindow, total, inProgress, completed)
   } catch (error) {
-    console.error('Failed to update tray:', error)
+    log.error('Failed to update tray:', error)
   }
 }
 
 // Helper to sync config worktreePaths with actual git worktrees
 async function syncWorktreePaths(featureName: string): Promise<void> {
-  console.log('🔄 Syncing worktree paths for feature:', featureName)
-  
+  log.info('🔄 Syncing worktree paths for feature:', featureName)
+
   try {
     const configManager = getConfigManager()
     const config = configManager.loadConfig()
     const feature = config.features?.find((f: any) => f.name === featureName)
-    
+
     if (!feature) {
-      console.log('❌ Feature not found:', featureName)
+      log.info('❌ Feature not found:', featureName)
       return
     }
-    
+
     const projectLocations = config.projectLocations || {}
     let configUpdated = false
-    
+
     // For each project in the feature
     for (const project of feature.projects) {
-      console.log(`  🔍 Checking project: ${project.name}`)
-      console.log(`     Current worktreePath: ${project.worktreePath || '(empty)'}`)
-      console.log(`     Branch: ${project.branch}`)
-      
+      log.info(`  🔍 Checking project: ${project.name}`)
+      log.info(`     Current worktreePath: ${project.worktreePath || '(empty)'}`)
+      log.info(`     Branch: ${project.branch}`)
+
       const projectPath = projectLocations[project.name]
       if (!projectPath) {
-        console.log(`  ⚠️ No project location for ${project.name}`)
+        log.info(`  ⚠️ No project location for ${project.name}`)
         continue
       }
-      
+
       // Get the main repo path
       const mainRepoPath = path.join(currentWorkspaceRoot, projectPath)
-      console.log(`     Main repo: ${mainRepoPath}`)
-      
+      log.info(`     Main repo: ${mainRepoPath}`)
+
       try {
         // Get all worktrees from git
         const { stdout } = await execAsync('git worktree list --porcelain', { cwd: mainRepoPath })
-        
+
         // Parse worktree list to find this feature's worktree
         const lines = stdout.split('\n')
         let currentWorktreePath = ''
         let currentBranch = ''
-        
+
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim()
-          
+
           if (line.startsWith('worktree ')) {
             currentWorktreePath = line.substring(9).trim()
           } else if (line.startsWith('branch ')) {
             currentBranch = line.substring(7).trim()
-            
+
             // Check if this branch matches our feature branch
             if (currentBranch === `refs/heads/${project.branch}`) {
               // Found the worktree for this project!
-              console.log(`     ✅ Found matching worktree: ${currentWorktreePath}`)
-              
+              log.info(`     ✅ Found matching worktree: ${currentWorktreePath}`)
+
               // Update if path is different (including empty -> filled)
               if (currentWorktreePath && currentWorktreePath !== project.worktreePath) {
-                console.log(`     📝 Updating worktreePath from "${project.worktreePath || '(empty)'}" to "${currentWorktreePath}"`)
+                log.info(
+                  `     📝 Updating worktreePath from "${project.worktreePath || '(empty)'}" to "${currentWorktreePath}"`,
+                )
                 project.worktreePath = currentWorktreePath
                 configUpdated = true
               } else if (currentWorktreePath && currentWorktreePath === project.worktreePath) {
-                console.log(`     ℹ️ Worktree path already correct`)
+                log.info(`     ℹ️ Worktree path already correct`)
               }
             }
           }
         }
-        
+
         if (!project.worktreePath) {
-          console.log(`  ⚠️ No worktree found for ${project.name} on branch ${project.branch}`)
+          log.info(`  ⚠️ No worktree found for ${project.name} on branch ${project.branch}`)
         }
       } catch (error: any) {
-        console.error(`  ❌ Error checking worktrees for ${project.name}:`, error.message)
+        log.error(`  ❌ Error checking worktrees for ${project.name}:`, error.message)
       }
     }
-    
+
     // Save config if updated
     if (configUpdated) {
       const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
-      console.log('✅ Config updated with synced worktree paths')
+      log.info('✅ Config updated with synced worktree paths')
     } else {
-      console.log('✅ No config updates needed')
+      log.info('✅ No config updates needed')
     }
   } catch (error: any) {
-    console.error('❌ Error syncing worktree paths:', error.message)
+    log.error('❌ Error syncing worktree paths:', error.message)
   }
 }
 
@@ -153,16 +159,16 @@ export function registerIpcHandlers() {
       const result = await dialog.showOpenDialog({
         properties: ['openDirectory'],
         title: 'Select Workspace Root',
-        message: 'Choose the root directory containing your repositories'
+        message: 'Choose the root directory containing your repositories',
       })
-      
+
       if (result.canceled || result.filePaths.length === 0) {
         return null
       }
-      
+
       return result.filePaths[0]
     } catch (error: any) {
-      console.error('Failed to open folder dialog:', error)
+      log.error('Failed to open folder dialog:', error)
       throw new Error(`Failed to open folder dialog: ${error.message}`)
     }
   })
@@ -170,29 +176,29 @@ export function registerIpcHandlers() {
   ipcMain.handle('system:openInTerminal', async (_, folderPath: string, terminalApp: string = 'terminal') => {
     try {
       const { exec } = require('child_process')
-      
+
       // Terminal app configurations: [app name for macOS]
-      const terminalConfigs: {[key: string]: {appName: string, command?: string}} = {
-        'terminal': { appName: 'Terminal' },
-        'iterm2': { appName: 'iTerm' },
-        'warp': { appName: 'Warp' },
-        'alacritty': { appName: 'Alacritty' },
-        'kitty': { appName: 'kitty' },
-        'hyper': { appName: 'Hyper' }
+      const terminalConfigs: { [key: string]: { appName: string; command?: string } } = {
+        terminal: { appName: 'Terminal' },
+        iterm2: { appName: 'iTerm' },
+        warp: { appName: 'Warp' },
+        alacritty: { appName: 'Alacritty' },
+        kitty: { appName: 'kitty' },
+        hyper: { appName: 'Hyper' },
       }
-      
+
       const config = terminalConfigs[terminalApp] || terminalConfigs['terminal']
-      
-      console.log(`Opening ${folderPath} in ${config.appName}`)
-      
+
+      log.info(`Opening ${folderPath} in ${config.appName}`)
+
       return new Promise((resolve) => {
         // macOS: Open Terminal app at specific path
         exec(`open -a "${config.appName}" "${folderPath}"`, (error: any) => {
           if (error) {
-            console.error(`Failed to open ${config.appName}:`, error)
-            resolve({ 
-              success: false, 
-              error: `${config.appName} not found. Please ensure the app is installed.`
+            log.error(`Failed to open ${config.appName}:`, error)
+            resolve({
+              success: false,
+              error: `${config.appName} not found. Please ensure the app is installed.`,
             })
           } else {
             resolve({ success: true })
@@ -200,7 +206,7 @@ export function registerIpcHandlers() {
         })
       })
     } catch (error: any) {
-      console.error('Failed to open terminal:', error)
+      log.error('Failed to open terminal:', error)
       return { success: false, error: error.message }
     }
   })
@@ -208,23 +214,25 @@ export function registerIpcHandlers() {
   ipcMain.handle('system:openInVSCode', async (_, folderPath: string) => {
     try {
       const { exec } = require('child_process')
-      
+
       // Try to open in VS Code
-      exec(`code "${folderPath}"`, (error: any, stdout: string, stderr: string) => {
+      exec(`code "${folderPath}"`, (error: any, _stdout: string, _stderr: string) => {
         if (error) {
           // If 'code' command not found, try opening with system default
           exec(`open -a "Visual Studio Code" "${folderPath}"`, (err2: any) => {
             if (err2) {
-              console.error('Failed to open VS Code:', err2)
-              throw new Error('VS Code not found. Please install code command: Cmd+Shift+P > "Shell Command: Install code command"')
+              log.error('Failed to open VS Code:', err2)
+              throw new Error(
+                'VS Code not found. Please install code command: Cmd+Shift+P > "Shell Command: Install code command"',
+              )
             }
           })
         }
       })
-      
+
       return { success: true }
     } catch (error: any) {
-      console.error('Failed to open VS Code:', error)
+      log.error('Failed to open VS Code:', error)
       return { success: false, error: error.message }
     }
   })
@@ -232,36 +240,36 @@ export function registerIpcHandlers() {
   ipcMain.handle('system:openInIDE', async (_, folderPath: string, ide: string) => {
     try {
       const { exec } = require('child_process')
-      
+
       // IDE configurations: [command, app name for macOS]
-      const ideConfigs: {[key: string]: {command: string, appName: string}} = {
-        'vscode': { command: 'code', appName: 'Visual Studio Code' },
-        'cursor': { command: 'cursor', appName: 'Cursor' },
-        'rider': { command: 'rider', appName: 'Rider' },
-        'webstorm': { command: 'webstorm', appName: 'WebStorm' },
-        'intellij': { command: 'idea', appName: 'IntelliJ IDEA' },
-        'code-insiders': { command: 'code-insiders', appName: 'Visual Studio Code - Insiders' }
+      const ideConfigs: { [key: string]: { command: string; appName: string } } = {
+        vscode: { command: 'code', appName: 'Visual Studio Code' },
+        cursor: { command: 'cursor', appName: 'Cursor' },
+        rider: { command: 'rider', appName: 'Rider' },
+        webstorm: { command: 'webstorm', appName: 'WebStorm' },
+        intellij: { command: 'idea', appName: 'IntelliJ IDEA' },
+        'code-insiders': { command: 'code-insiders', appName: 'Visual Studio Code - Insiders' },
       }
-      
+
       const config = ideConfigs[ide]
       if (!config) {
         return { success: false, error: `Unknown IDE: ${ide}` }
       }
-      
-      console.log(`Opening ${folderPath} in ${config.appName}`)
-      
+
+      log.info(`Opening ${folderPath} in ${config.appName}`)
+
       return new Promise((resolve) => {
         // Try CLI command first
         exec(`${config.command} "${folderPath}"`, (error: any) => {
           if (error) {
-            console.log(`CLI command '${config.command}' failed, trying macOS app launcher...`)
+            log.info(`CLI command '${config.command}' failed, trying macOS app launcher...`)
             // If CLI command not found, try macOS app launcher
             exec(`open -a "${config.appName}" "${folderPath}"`, (err2: any) => {
               if (err2) {
-                console.error(`Failed to open ${config.appName}:`, err2)
-                resolve({ 
-                  success: false, 
-                  error: `${config.appName} not found. Please install the CLI command or ensure the app is installed.`
+                log.error(`Failed to open ${config.appName}:`, err2)
+                resolve({
+                  success: false,
+                  error: `${config.appName} not found. Please install the CLI command or ensure the app is installed.`,
                 })
               } else {
                 resolve({ success: true })
@@ -273,7 +281,7 @@ export function registerIpcHandlers() {
         })
       })
     } catch (error: any) {
-      console.error('Failed to open IDE:', error)
+      log.error('Failed to open IDE:', error)
       return { success: false, error: error.message }
     }
   })
@@ -282,8 +290,7 @@ export function registerIpcHandlers() {
     return new Promise((resolve) => {
       const { exec } = require('child_process')
       const cwd = workingDir || currentWorkspaceRoot
-      
-      
+
       // Inherit environment variables and add git optimizations
       const env = {
         ...process.env,
@@ -291,83 +298,78 @@ export function registerIpcHandlers() {
         GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=10', // SSH timeout
         GIT_ASKPASS: 'echo', // Prevent password prompts
       }
-      
+
       // Use async exec with longer timeout
-      const child = exec(command, {
-        cwd,
-        encoding: 'utf-8',
-        maxBuffer: 1024 * 1024 * 10, // 10MB buffer
-        timeout: 300000, // 5 minute timeout (for slow networks)
-        shell: '/bin/bash', // Use bash shell
-        env, // Use modified environment
-      }, (error: any, stdout: string, stderr: string) => {
-        if (error) {
-          console.error('Command failed:', error.message)
-          
-          // Provide better error messages
-          let errorMsg = stderr || error.message
-          
-          if (error.killed || error.signal === 'SIGTERM') {
-            errorMsg = 'Command timed out (exceeded 2 minutes)'
-          } else if (error.code) {
-            errorMsg = `Command exited with code ${error.code}\n${stderr || error.message}`
+      const _child = exec(
+        command,
+        {
+          cwd,
+          encoding: 'utf-8',
+          maxBuffer: 1024 * 1024 * 10, // 10MB buffer
+          timeout: 300000, // 5 minute timeout (for slow networks)
+          shell: '/bin/bash', // Use bash shell
+          env, // Use modified environment
+        },
+        (error: any, stdout: string, stderr: string) => {
+          if (error) {
+            log.error('Command failed:', error.message)
+
+            // Provide better error messages
+            let errorMsg = stderr || error.message
+
+            if (error.killed || error.signal === 'SIGTERM') {
+              errorMsg = 'Command timed out (exceeded 5 minutes)'
+            } else if (error.code) {
+              errorMsg = `Command exited with code ${error.code}\n${stderr || error.message}`
+            }
+
+            resolve({
+              success: false,
+              output: stdout || '',
+              error: errorMsg,
+            })
+          } else {
+            resolve({
+              success: true,
+              output: stdout || 'Command completed successfully (no output)',
+              error: null,
+            })
           }
-          
-          resolve({
-            success: false,
-            output: stdout || '',
-            error: errorMsg
-          })
-        } else {
-          resolve({
-            success: true,
-            output: stdout || 'Command completed successfully (no output)',
-            error: null
-          })
-        }
-      })
-      
-      // Handle timeout separately
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill()
-          resolve({
-            success: false,
-            output: '',
-            error: 'Command exceeded 2 minute timeout and was terminated'
-          })
-        }
-      }, 125000) // 2 minutes + 5 seconds grace period
+        },
+      )
     })
   })
 
   // Features
   ipcMain.handle('features:getAll', async () => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       const features = configManager.getAllFeatures()
       updateTrayWithFeatures()
       return features
     } catch (error: any) {
-      console.error('Failed to get features:', error)
+      log.error('Failed to get features:', error)
       return []
     }
   })
 
   ipcMain.handle('features:getByName', async (_, name: string) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       return configManager.getFeature(name)
     } catch (error: any) {
-      console.error('Failed to get feature:', error)
+      log.error('Failed to get feature:', error)
       return null
     }
   })
 
   ipcMain.handle('features:create', async (_, data: any) => {
     try {
-      console.log('Creating feature with data:', JSON.stringify(data, null, 2))
-      
+      requireWorkspace()
+      log.info('Creating feature with data:', JSON.stringify(data, null, 2))
+
       // Validate data
       if (!data.name) {
         throw new Error('Feature name is required')
@@ -375,26 +377,26 @@ export function registerIpcHandlers() {
       if (!data.projects || !Array.isArray(data.projects) || data.projects.length === 0) {
         throw new Error('At least one project must be selected')
       }
-      
+
       // Sanitize feature name for git branch compatibility
       const sanitizedFeatureName = sanitizeFeatureName(data.name)
-      console.log('Sanitized feature name:', sanitizedFeatureName)
-      
+      log.info('Sanitized feature name:', sanitizedFeatureName)
+
       // Use sanitized name for branch creation
       data.name = sanitizedFeatureName
-      
+
       const configManager = getConfigManager()
       const templateManager = new TemplateManager(currentWorkspaceRoot)
-      
-      console.log('Creating feature:', data.name)
-      console.log('Projects to include:', data.projects)
-      
+
+      log.info('Creating feature:', data.name)
+      log.info('Projects to include:', data.projects)
+
       // Validate feature name is unique
       const existingFeatures = configManager.getAllFeatures()
-      if (existingFeatures.some(f => f.name === data.name)) {
+      if (existingFeatures.some((f: any) => f.name === data.name)) {
         throw new Error(`Feature "${data.name}" already exists`)
       }
-      
+
       // Create project statuses using feature name for branches
       // Use selected branch as base, or fall back to current branch
       const projectStatuses = data.projects.map((projectName: string) => {
@@ -405,182 +407,187 @@ export function registerIpcHandlers() {
           branch: `feature/${data.name}`,
           baseBranch: baseBranch, // Store which branch this feature is created from
           worktreePath: '',
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
         }
       })
-      
+
       // Create feature object (no ID, just name)
       const newFeature = {
         name: data.name,
         projects: projectStatuses,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        ...(data.expiresAt && { expiresAt: data.expiresAt })
+        ...(data.expiresAt && { expiresAt: data.expiresAt }),
       }
-      
+
       // Add feature to config
       configManager.addFeature(newFeature)
-      
+
       // Create feature folder
       const today = new Date()
       const dateStr = today.toISOString().split('T')[0]
       const featureFolderName = `${dateStr}-${data.name.replace(/[^a-zA-Z0-9]/g, '-')}`
       const featuresDir = path.join(currentWorkspaceRoot, 'features')
       const featureTrackingDir = path.join(featuresDir, featureFolderName)
-      
+
       const fs = require('fs')
       if (!fs.existsSync(featuresDir)) {
         fs.mkdirSync(featuresDir, { recursive: true })
       }
       fs.mkdirSync(featureTrackingDir, { recursive: true })
-      
+
       // Generate README from template
       const templateName = data.template || 'default'
       const readmePath = path.join(featureTrackingDir, 'README.md')
       templateManager.generateReadme(templateName, newFeature, readmePath)
-      
+
       // Create local feature branches for all selected projects
       const { exec } = require('child_process')
       const { promisify } = require('util')
       const execAsync = promisify(exec)
-      
-      console.log('Creating local feature branches...')
-      console.log('Project statuses:', JSON.stringify(projectStatuses, null, 2))
-      
+
+      log.info('Creating local feature branches...')
+      log.info('Project statuses:', JSON.stringify(projectStatuses, null, 2))
+
       for (const projectStatus of projectStatuses) {
         try {
           const projectConfig = configManager.getConfig().projects.find((p: any) => p.name === projectStatus.name)
           if (!projectConfig) {
-            console.log(`⚠ Project config not found for ${projectStatus.name}`)
+            log.info(`⚠ Project config not found for ${projectStatus.name}`)
             continue
           }
-          
+
           const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
           const featureBranch = projectStatus.branch
           const baseBranch = projectStatus.baseBranch
-          
-          console.log(`[${projectStatus.name}] Project path: ${projectPath}`)
-          console.log(`[${projectStatus.name}] Feature branch: ${featureBranch}`)
-          console.log(`[${projectStatus.name}] Base branch: ${baseBranch}`)
-          
+
+          log.info(`[${projectStatus.name}] Project path: ${projectPath}`)
+          log.info(`[${projectStatus.name}] Feature branch: ${featureBranch}`)
+          log.info(`[${projectStatus.name}] Base branch: ${baseBranch}`)
+
           // Check if branch already exists
-          const checkBranch = await execAsync(`git rev-parse --verify ${featureBranch}`, { cwd: projectPath }).catch(() => null)
-          
+          const checkBranch = await execAsync(`git rev-parse --verify ${featureBranch}`, { cwd: projectPath }).catch(
+            () => null,
+          )
+
           if (!checkBranch) {
             // Create local branch from selected base branch
-            console.log(`[${projectStatus.name}] Creating ${featureBranch} from ${baseBranch}...`)
+            log.info(`[${projectStatus.name}] Creating ${featureBranch} from ${baseBranch}...`)
             const result = await execAsync(`git branch ${featureBranch} ${baseBranch}`, { cwd: projectPath })
-            console.log(`✓ Created ${featureBranch} in ${projectStatus.name}`)
+            log.info(`✓ Created ${featureBranch} in ${projectStatus.name}`)
             if (result.stderr) {
-              console.log(`[${projectStatus.name}] stderr: ${result.stderr}`)
+              log.info(`[${projectStatus.name}] stderr: ${result.stderr}`)
             }
           } else {
-            console.log(`[${projectStatus.name}] Branch ${featureBranch} already exists - skipping`)
+            log.info(`[${projectStatus.name}] Branch ${featureBranch} already exists - skipping`)
           }
         } catch (error: any) {
-          console.error(`❌ Failed to create branch for ${projectStatus.name}:`, error.message)
+          log.error(`❌ Failed to create branch for ${projectStatus.name}:`, error.message)
           if (error.stderr) {
-            console.error(`[${projectStatus.name}] Git error: ${error.stderr}`)
+            log.error(`[${projectStatus.name}] Git error: ${error.stderr}`)
           }
           // Don't fail the entire feature creation if one branch fails
         }
       }
-      
+
       updateTrayWithFeatures()
       notifyFeatureCreated(newFeature.name)
-      
+
       return newFeature
     } catch (error: any) {
-      console.error('Failed to create feature:', error)
+      log.error('Failed to create feature:', error)
       throw new Error(`Failed to create feature: ${error.message}`)
     }
   })
 
   ipcMain.handle('features:update', async (_, id: string, data: any) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       configManager.updateFeature(id, data)
       updateTrayWithFeatures()
       return configManager.getFeature(id)
     } catch (error: any) {
-      console.error('Failed to update feature:', error)
+      log.error('Failed to update feature:', error)
       throw new Error(`Failed to update feature: ${error.message}`)
     }
   })
 
   ipcMain.handle('features:delete', async (_, name: string) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       const feature = configManager.getFeature(name)
-      
+
       if (!feature) {
         throw new Error(`Feature ${name} not found`)
       }
-      
+
       // Clean up each project's worktree and branch
       for (const project of feature.projects) {
         try {
           const projectPath = configManager.getProjectPath(project.name)
           const worktreeManager = new WorktreeManager(projectPath)
-          
+
           // Remove worktree if it exists
           if (project.worktreePath && fs.existsSync(project.worktreePath)) {
-            console.log(`Removing worktree for ${project.name}: ${project.worktreePath}`)
+            log.info(`Removing worktree for ${project.name}: ${project.worktreePath}`)
             await worktreeManager.removeWorktree(project.worktreePath)
           }
-          
+
           // Delete the feature branch
           if (project.branch) {
-            console.log(`Deleting branch for ${project.name}: ${project.branch}`)
+            log.info(`Deleting branch for ${project.name}: ${project.branch}`)
             await worktreeManager.deleteFeatureBranch(project.branch)
           }
         } catch (error: any) {
-          console.error(`Failed to cleanup ${project.name}:`, error.message)
+          log.error(`Failed to cleanup ${project.name}:`, error.message)
           // Continue with other projects even if one fails
         }
       }
-      
+
       // Delete feature tracking folder
       try {
         const featureDate = new Date(feature.createdAt).toISOString().split('T')[0]
         const featureFolderName = `${featureDate}-${name.replace(/[^a-zA-Z0-9]/g, '-')}`
         const featureFolder = path.join(currentWorkspaceRoot, 'features', featureFolderName)
-        
+
         if (fs.existsSync(featureFolder)) {
-          console.log(`Deleting feature folder: ${featureFolder}`)
+          log.info(`Deleting feature folder: ${featureFolder}`)
           fs.rmSync(featureFolder, { recursive: true, force: true })
         }
       } catch (error: any) {
-        console.error(`Failed to delete feature folder:`, error.message)
+        log.error(`Failed to delete feature folder:`, error.message)
       }
-      
+
       // Finally, remove from config
       configManager.deleteFeature(name)
       updateTrayWithFeatures()
-      
-      console.log(`✅ Feature ${name} deleted successfully`)
+
+      log.info(`✅ Feature ${name} deleted successfully`)
     } catch (error: any) {
-      console.error('Failed to delete feature:', error)
+      log.error('Failed to delete feature:', error)
       throw new Error(`Failed to delete feature: ${error.message}`)
     }
   })
 
   ipcMain.handle('features:complete', async (_, name: string, _cleanup: boolean) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       const feature = configManager.getFeature(name)
-      
+
       if (feature) {
         // Mark all projects as completed
-        feature.projects.forEach(project => {
+        feature.projects.forEach((project: any) => {
           configManager.updateProjectStatus(name, project.name, 'completed')
         })
-        
+
         updateTrayWithFeatures()
         notifyFeatureCompleted(feature.name)
       }
     } catch (error: any) {
-      console.error('Failed to complete feature:', error)
+      log.error('Failed to complete feature:', error)
       throw new Error(`Failed to complete feature: ${error.message}`)
     }
   })
@@ -588,59 +595,60 @@ export function registerIpcHandlers() {
   // Clean up expired feature (delete worktrees, branches, and folder)
   ipcMain.handle('features:cleanupExpired', async (_, name: string) => {
     try {
-      console.log(`🗑️ Cleaning up expired feature: ${name}`)
+      requireWorkspace()
+      log.info(`🗑️ Cleaning up expired feature: ${name}`)
       const configManager = getConfigManager()
       const feature = configManager.getFeature(name)
-      
+
       if (!feature) {
         throw new Error(`Feature ${name} not found`)
       }
-      
+
       // Clean up each project's worktree and branch
       for (const project of feature.projects) {
         try {
           const projectPath = configManager.getProjectPath(project.name)
           const worktreeManager = new WorktreeManager(projectPath)
-          
+
           // Remove worktree if it exists
           if (project.worktreePath && fs.existsSync(project.worktreePath)) {
-            console.log(`  📁 Removing worktree for ${project.name}: ${project.worktreePath}`)
+            log.info(`  📁 Removing worktree for ${project.name}: ${project.worktreePath}`)
             await worktreeManager.removeWorktree(project.worktreePath)
           }
-          
+
           // Delete the feature branch
           if (project.branch) {
-            console.log(`  🌿 Deleting branch for ${project.name}: ${project.branch}`)
+            log.info(`  🌿 Deleting branch for ${project.name}: ${project.branch}`)
             await worktreeManager.deleteFeatureBranch(project.branch)
           }
         } catch (error: any) {
-          console.error(`  ❌ Failed to cleanup ${project.name}:`, error.message)
+          log.error(`  ❌ Failed to cleanup ${project.name}:`, error.message)
           // Continue with other projects even if one fails
         }
       }
-      
+
       // Delete feature tracking folder
       try {
         const featureDate = new Date(feature.createdAt).toISOString().split('T')[0]
         const featureFolderName = `${featureDate}-${name.replace(/[^a-zA-Z0-9]/g, '-')}`
         const featureFolder = path.join(currentWorkspaceRoot, 'features', featureFolderName)
-        
+
         if (fs.existsSync(featureFolder)) {
-          console.log(`  🗂️ Deleting feature folder: ${featureFolder}`)
+          log.info(`  🗂️ Deleting feature folder: ${featureFolder}`)
           fs.rmSync(featureFolder, { recursive: true, force: true })
         }
       } catch (error: any) {
-        console.error(`  ❌ Failed to delete feature folder:`, error.message)
+        log.error(`  ❌ Failed to delete feature folder:`, error.message)
       }
-      
+
       // Finally, remove from config
       configManager.deleteFeature(name)
       updateTrayWithFeatures()
-      
-      console.log(`✅ Expired feature ${name} cleaned up successfully`)
+
+      log.info(`✅ Expired feature ${name} cleaned up successfully`)
       return { success: true }
     } catch (error: any) {
-      console.error('Failed to cleanup expired feature:', error)
+      log.error('Failed to cleanup expired feature:', error)
       throw new Error(`Failed to cleanup expired feature: ${error.message}`)
     }
   })
@@ -648,69 +656,93 @@ export function registerIpcHandlers() {
   // Projects
   ipcMain.handle('projects:updateStatus', async (_, featureName: string, projectName: string, status: string) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       configManager.updateProjectStatus(featureName, projectName, status as 'pending' | 'in_progress' | 'completed')
-      
+
       const feature = configManager.getFeature(featureName)
       if (feature) {
         updateTrayWithFeatures()
         notifyProjectStatusChanged(feature.name, projectName, status)
       }
     } catch (error: any) {
-      console.error('Failed to update project status:', error)
+      log.error('Failed to update project status:', error)
       throw new Error(`Failed to update project status: ${error.message}`)
     }
   })
 
   ipcMain.handle('projects:createWorktree', async (_, featureName: string, projectName: string) => {
     try {
+      requireWorkspace()
       const configManager = getConfigManager()
       const feature = configManager.getFeature(featureName)
-      
+
       if (!feature) {
         throw new Error(`Feature ${featureName} not found`)
       }
-      
+
       // Get project path
       const projectPath = configManager.getProjectPath(projectName)
       const worktreeManager = new WorktreeManager(projectPath)
-      
+
       // Create feature tracking directory
       const today = new Date(feature.createdAt)
       const dateStr = today.toISOString().split('T')[0]
       const featureFolderName = `${dateStr}-${featureName.replace(/[^a-zA-Z0-9]/g, '-')}`
       const featureTrackingDir = path.join(currentWorkspaceRoot, 'features', featureFolderName)
-      
+
       // Create feature folder if it doesn't exist
       if (!fs.existsSync(featureTrackingDir)) {
         fs.mkdirSync(featureTrackingDir, { recursive: true })
       }
-      
+
       // Create worktree
       const result = await worktreeManager.createWorktree(featureName, projectName, featureTrackingDir)
-      
+
       // Update project status with worktree path
-      const updatedProjects = feature.projects.map(p => 
-        p.name === projectName 
-          ? { ...p, worktreePath: result.path }
-          : p
+      const updatedProjects = feature.projects.map((p: any) =>
+        p.name === projectName ? { ...p, worktreePath: result.path } : p,
       )
-      
+
       configManager.updateFeature(featureName, { projects: updatedProjects })
-      
+
       return { success: true, path: result.path, sourceBranch: result.sourceBranch }
     } catch (error: any) {
-      console.error('Failed to create worktree:', error)
+      log.error('Failed to create worktree:', error)
       return { success: false, error: error.message }
     }
   })
 
-  ipcMain.handle('projects:removeWorktree', async (_, featureId: string, projectName: string) => {
+  ipcMain.handle('projects:removeWorktree', async (_, featureName: string, projectName: string) => {
     try {
-      // TODO: Implement worktree removal
-      console.log('Removing worktree:', featureId, projectName)
+      const configManager = getConfigManager()
+      const feature = configManager.getFeature(featureName)
+
+      if (!feature) {
+        throw new Error(`Feature ${featureName} not found`)
+      }
+
+      const project = feature.projects.find((p: any) => p.name === projectName)
+      if (!project) {
+        throw new Error(`Project ${projectName} not found in feature ${featureName}`)
+      }
+
+      if (project.worktreePath && fs.existsSync(project.worktreePath)) {
+        const projectPath = configManager.getProjectPath(projectName)
+        const worktreeManager = new WorktreeManager(projectPath)
+        log.info(`Removing worktree for ${projectName}: ${project.worktreePath}`)
+        await worktreeManager.removeWorktree(project.worktreePath)
+      }
+
+      // Clear worktree path in config
+      const updatedProjects = feature.projects.map((p: any) =>
+        p.name === projectName ? { ...p, worktreePath: '' } : p,
+      )
+      configManager.updateFeature(featureName, { projects: updatedProjects })
+
+      return { success: true }
     } catch (error: any) {
-      console.error('Failed to remove worktree:', error)
+      log.error('Failed to remove worktree:', error)
       throw new Error(`Failed to remove worktree: ${error.message}`)
     }
   })
@@ -721,7 +753,7 @@ export function registerIpcHandlers() {
       const templateManager = new TemplateManager(currentWorkspaceRoot)
       return templateManager.getAvailableTemplates()
     } catch (error: any) {
-      console.error('Failed to get templates:', error)
+      log.error('Failed to get templates:', error)
       return ['default', 'jira']
     }
   })
@@ -731,7 +763,7 @@ export function registerIpcHandlers() {
       const templateManager = new TemplateManager(currentWorkspaceRoot)
       return templateManager.listCustomTemplates(currentWorkspaceRoot)
     } catch (error: any) {
-      console.error('Failed to get custom templates:', error)
+      log.error('Failed to get custom templates:', error)
       return []
     }
   })
@@ -741,17 +773,26 @@ export function registerIpcHandlers() {
       const templateManager = new TemplateManager(currentWorkspaceRoot)
       templateManager.createCustomTemplate(currentWorkspaceRoot, name, content)
     } catch (error: any) {
-      console.error('Failed to create template:', error)
+      log.error('Failed to create template:', error)
       throw new Error(`Failed to create template: ${error.message}`)
     }
   })
 
   ipcMain.handle('templates:delete', async (_, name: string) => {
     try {
-      // TODO: Implement template deletion
-      console.log('Deleting template:', name)
+      if (!currentWorkspaceRoot) {
+        throw new Error('No workspace set')
+      }
+
+      const templatePath = path.join(currentWorkspaceRoot, '.nexwork-templates', `${name}.md`)
+      if (!fs.existsSync(templatePath)) {
+        throw new Error(`Template "${name}" not found`)
+      }
+
+      fs.unlinkSync(templatePath)
+      log.info(`Deleted template: ${name}`)
     } catch (error: any) {
-      console.error('Failed to delete template:', error)
+      log.error('Failed to delete template:', error)
       throw new Error(`Failed to delete template: ${error.message}`)
     }
   })
@@ -761,7 +802,7 @@ export function registerIpcHandlers() {
       // Generate preview
       return `# ${data.name}\n\n**ID:** ${data.id}\n\n## Projects\n${data.projects.map((p: any) => `- ${p}`).join('\n')}`
     } catch (error: any) {
-      console.error('Failed to preview template:', error)
+      log.error('Failed to preview template:', error)
       return ''
     }
   })
@@ -776,38 +817,38 @@ export function registerIpcHandlers() {
           projects: [],
           features: [],
           userConfig: {
-            defaultTemplate: 'default'
-          }
+            defaultTemplate: 'default',
+          },
         }
       }
-      
+
       const configManager = getConfigManager()
       const config = configManager.loadConfig()
-      
+
       // Convert projectLocations object to projects array for frontend
       const projects = Object.entries(config.projectLocations || {}).map(([name, projectPath]) => ({
         name,
-        path: projectPath
+        path: projectPath,
       }))
-      
+
       return {
         workspaceRoot: currentWorkspaceRoot,
         projects: projects,
         features: config.features || [],
         userConfig: config.userConfig || {
-          defaultTemplate: 'default'
-        }
+          defaultTemplate: 'default',
+        },
       }
     } catch (error: any) {
-      console.error('Failed to load config:', error)
+      log.error('Failed to load config:', error)
       // Return empty config for first-time setup
       return {
         workspaceRoot: currentWorkspaceRoot || '',
         projects: [],
         features: [],
         userConfig: {
-          defaultTemplate: 'default'
-        }
+          defaultTemplate: 'default',
+        },
       }
     }
   })
@@ -815,24 +856,24 @@ export function registerIpcHandlers() {
   ipcMain.handle('config:save', async (_, config: any) => {
     try {
       const configManager = getConfigManager()
-      
+
       // Check if config exists, if not, initialize it
       const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
       if (!fs.existsSync(configPath)) {
-        console.log('Config not found, initializing...')
+        log.info('Config not found, initializing...')
         await configManager.initialize()
       }
-      
+
       // Update user config
       const currentConfig = configManager.loadConfig()
       currentConfig.userConfig = config.userConfig
-      
+
       // Save to file
       fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2), 'utf-8')
-      
-      console.log('Config saved successfully')
+
+      log.info('Config saved successfully')
     } catch (error: any) {
-      console.error('Failed to save config:', error)
+      log.error('Failed to save config:', error)
       throw new Error(`Failed to save config: ${error.message}`)
     }
   })
@@ -845,59 +886,59 @@ export function registerIpcHandlers() {
       }
 
       currentWorkspaceRoot = workspacePath
-      console.log('Workspace set to:', currentWorkspaceRoot)
-      
+      log.info('Workspace set to:', currentWorkspaceRoot)
+
       // Save to settings for persistence
       try {
         const { storage } = await import('./storage')
         storage.setSetting('lastWorkspace', workspacePath)
-        console.log('💾 Workspace saved to settings')
+        log.info('💾 Workspace saved to settings')
       } catch (storageError) {
-        console.warn('⚠️ Could not save workspace to settings:', storageError)
+        log.warn('⚠️ Could not save workspace to settings:', storageError)
       }
-      
+
       // Initialize config for new workspace and discover projects
       try {
         const configManager = getConfigManager()
-        
+
         // Check if config exists, if not, initialize it
         const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
         if (!fs.existsSync(configPath)) {
-          console.log('Initializing config for new workspace...')
+          log.info('Initializing config for new workspace...')
           await configManager.initialize()
         }
-        
-        console.log('Projects discovered for workspace:', currentWorkspaceRoot)
+
+        log.info('Projects discovered for workspace:', currentWorkspaceRoot)
       } catch (initError) {
-        console.warn('Could not initialize config:', initError)
+        log.warn('Could not initialize config:', initError)
         // Don't throw - workspace is still set, config can be created later
       }
     } catch (error: any) {
-      console.error('Failed to set workspace:', error)
+      log.error('Failed to set workspace:', error)
       throw new Error(`Failed to set workspace: ${error.message}`)
     }
   })
 
   // Stats
   ipcMain.handle('stats:getFeatureStats', async (_, featureName: string) => {
-    console.log('⭐ stats:getFeatureStats called for:', featureName)
+    log.info('⭐ stats:getFeatureStats called for:', featureName)
     try {
       // First, sync worktree paths with actual git worktrees
       await syncWorktreePaths(featureName)
-      
+
       const configManager = getConfigManager()
       const feature = configManager.getFeature(featureName)
-      
+
       if (!feature) {
-        console.log('❌ Feature not found:', featureName)
+        log.info('❌ Feature not found:', featureName)
         return null
       }
-      
-      console.log('✅ Feature found:', feature.name)
 
-      const completed = feature.projects.filter(p => p.status === 'completed').length
-      const inProgress = feature.projects.filter(p => p.status === 'in_progress').length
-      const pending = feature.projects.filter(p => p.status === 'pending').length
+      log.info('✅ Feature found:', feature.name)
+
+      const completed = feature.projects.filter((p: any) => p.status === 'completed').length
+      const inProgress = feature.projects.filter((p: any) => p.status === 'in_progress').length
+      const pending = feature.projects.filter((p: any) => p.status === 'pending').length
 
       // Calculate elapsed time
       const created = new Date(feature.createdAt)
@@ -909,29 +950,27 @@ export function registerIpcHandlers() {
       const elapsed = `${days}d ${hours}h ${minutes}m`
 
       // Calculate real-time git stats from worktrees
-      console.log('🔍 Calculating git stats for feature:', featureName)
-      
+      log.info('🔍 Calculating git stats for feature:', featureName)
+
       let totalCommits = 0
       let totalFilesChanged = 0
       let totalLinesAdded = 0
       let totalLinesDeleted = 0
-      
+
       // Store per-project stats
       const projectStats: any = {}
-      
+
       const fs = require('fs')
-      const projectsWithWorktrees = feature.projects.filter((p: any) => 
-        p.worktreePath && fs.existsSync(p.worktreePath)
-      )
-      
-      console.log(`📁 Found ${projectsWithWorktrees.length} projects with worktrees`)
+      const projectsWithWorktrees = feature.projects.filter((p: any) => p.worktreePath && fs.existsSync(p.worktreePath))
+
+      log.info(`📁 Found ${projectsWithWorktrees.length} projects with worktrees`)
       projectsWithWorktrees.forEach((p: any) => {
-        console.log(`  - ${p.name}: ${p.worktreePath}`)
+        log.info(`  - ${p.name}: ${p.worktreePath}`)
       })
-      
+
       for (const project of projectsWithWorktrees) {
-        console.log(`\n📊 Processing ${project.name}...`)
-        
+        log.info(`\n📊 Processing ${project.name}...`)
+
         // Initialize stats for this project
         projectStats[project.name] = {
           commits: 0,
@@ -940,181 +979,186 @@ export function registerIpcHandlers() {
           linesDeleted: 0,
           netChange: 0,
           currentBranch: '',
-          baseBranch: ''
+          baseBranch: '',
         }
-        
+
         try {
           // Get diff stats comparing current branch to base
           // Use the base branch that was stored when the feature was created
           const baseBranch = project.baseBranch || 'staging' // default to staging if not set
-          
+
           // Get the current branch in worktree
           const branchResult = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: project.worktreePath })
           const currentBranch = branchResult.stdout.trim()
-          console.log(`  Current branch: ${currentBranch}`)
-          console.log(`  Base branch: origin/${baseBranch}`)
-          
+          log.info(`  Current branch: ${currentBranch}`)
+          log.info(`  Base branch: origin/${baseBranch}`)
+
           projectStats[project.name].currentBranch = currentBranch
           projectStats[project.name].baseBranch = baseBranch
-          
+
           try {
             // Get diff stats including ALL changes:
             // 1. Committed changes: git diff baseBranch...currentBranch --shortstat
             // 2. Working directory changes: git diff HEAD --shortstat
-            
+
             // First, get committed changes between branches
             const branchDiffCommand = `git diff origin/${baseBranch}...${currentBranch} --shortstat`
-            console.log(`  Running (branch diff): ${branchDiffCommand}`)
-            
+            log.info(`  Running (branch diff): ${branchDiffCommand}`)
+
             const branchDiffResult = await execAsync(branchDiffCommand, { cwd: project.worktreePath })
             const branchDiffStats = branchDiffResult.stdout.trim()
-            console.log(`  Branch diff output: "${branchDiffStats}"`)
-            
+            log.info(`  Branch diff output: "${branchDiffStats}"`)
+
             // Then, get working directory changes (unstaged + staged)
             const workingDiffCommand = `git diff HEAD --shortstat`
-            console.log(`  Running (working dir diff): ${workingDiffCommand}`)
-            
+            log.info(`  Running (working dir diff): ${workingDiffCommand}`)
+
             const workingDiffResult = await execAsync(workingDiffCommand, { cwd: project.worktreePath })
             const workingDiffStats = workingDiffResult.stdout.trim()
-            console.log(`  Working dir diff output: "${workingDiffStats}"`)
-            
+            log.info(`  Working dir diff output: "${workingDiffStats}"`)
+
             // Parse and combine both diffs
             const parseDiff = (diffStats: string) => {
               const filesMatch = diffStats.match(/(\d+) files? changed/)
               const addMatch = diffStats.match(/(\d+) insertions?\(\+\)/)
               const delMatch = diffStats.match(/(\d+) deletions?\(-\)/)
-              
+
               return {
                 files: filesMatch ? parseInt(filesMatch[1]) : 0,
                 added: addMatch ? parseInt(addMatch[1]) : 0,
-                deleted: delMatch ? parseInt(delMatch[1]) : 0
+                deleted: delMatch ? parseInt(delMatch[1]) : 0,
               }
             }
-            
+
             const branchChanges = parseDiff(branchDiffStats)
             const workingChanges = parseDiff(workingDiffStats)
-            
+
             // Combine the stats (working dir changes take precedence as they're more current)
             const files = Math.max(branchChanges.files, workingChanges.files)
             const added = Math.max(branchChanges.added, workingChanges.added)
             const deleted = Math.max(branchChanges.deleted, workingChanges.deleted)
-            
+
             // Store per-project stats
             projectStats[project.name].filesChanged = files
             projectStats[project.name].linesAdded = added
             projectStats[project.name].linesDeleted = deleted
             projectStats[project.name].netChange = added - deleted
-            
+
             if (files > 0) {
-              console.log(`  ✅ Files changed: ${files}`)
+              log.info(`  ✅ Files changed: ${files}`)
               totalFilesChanged += files
             }
             if (added > 0) {
-              console.log(`  ✅ Lines added: ${added}`)
+              log.info(`  ✅ Lines added: ${added}`)
               totalLinesAdded += added
             }
             if (deleted > 0) {
-              console.log(`  ✅ Lines deleted: ${deleted}`)
+              log.info(`  ✅ Lines deleted: ${deleted}`)
               totalLinesDeleted += deleted
             }
-            
+
             if (files === 0 && added === 0 && deleted === 0) {
-              console.log(`  ⚠️ No changes detected`)
+              log.info(`  ⚠️ No changes detected`)
             }
           } catch (error: any) {
             // Branch might not have diverged yet or diff failed
-            console.log(`  ❌ Diff failed: ${error.message}`)
+            log.info(`  ❌ Diff failed: ${error.message}`)
           }
-          
+
           // Count commits on feature branch (commits ahead of base)
           try {
             const commitCommand = `git rev-list --count origin/${baseBranch}..${currentBranch}`
-            console.log(`  Running: ${commitCommand}`)
-            
+            log.info(`  Running: ${commitCommand}`)
+
             const commitResult = await execAsync(commitCommand, { cwd: project.worktreePath })
             const commits = parseInt(commitResult.stdout.trim())
-            console.log(`  ✅ Commits ahead: ${commits}`)
-            
+            log.info(`  ✅ Commits ahead: ${commits}`)
+
             // Store per-project commits
             projectStats[project.name].commits = commits
             totalCommits += commits
           } catch (error: any) {
-            console.log(`  ❌ Commit count failed: ${error.message}`)
+            log.info(`  ❌ Commit count failed: ${error.message}`)
           }
         } catch (error: any) {
-          console.error(`❌ Failed to get stats for ${project.name}:`, error.message)
+          log.error(`❌ Failed to get stats for ${project.name}:`, error.message)
         }
       }
-      
-      console.log(`\n📈 Final Stats:`)
-      console.log(`  Commits: ${totalCommits}`)
-      console.log(`  Files Changed: ${totalFilesChanged}`)
-      console.log(`  Lines Added: ${totalLinesAdded}`)
-      console.log(`  Lines Deleted: ${totalLinesDeleted}`)
-      console.log(`  Net Change: ${totalLinesAdded - totalLinesDeleted}`)
-      
+
+      log.info(`\n📈 Final Stats:`)
+      log.info(`  Commits: ${totalCommits}`)
+      log.info(`  Files Changed: ${totalFilesChanged}`)
+      log.info(`  Lines Added: ${totalLinesAdded}`)
+      log.info(`  Lines Deleted: ${totalLinesDeleted}`)
+      log.info(`  Net Change: ${totalLinesAdded - totalLinesDeleted}`)
+
       return {
         timeTracking: {
           created: feature.createdAt,
           started: feature.startedAt,
           completed: feature.completedAt,
-          elapsed
+          elapsed,
         },
         projectStatus: {
           total: feature.projects.length,
           completed,
           inProgress,
           pending,
-          progress: Math.round((completed / feature.projects.length) * 100)
+          progress: Math.round((completed / feature.projects.length) * 100),
         },
         gitStats: {
           commits: totalCommits,
           filesChanged: totalFilesChanged,
           linesAdded: totalLinesAdded,
           linesDeleted: totalLinesDeleted,
-          netChange: totalLinesAdded - totalLinesDeleted
+          netChange: totalLinesAdded - totalLinesDeleted,
         },
-        projectDetails: await Promise.all(feature.projects.map(async (p: any) => {
-          const stats = projectStats[p.name] || {
-            commits: 0,
-            filesChanged: 0,
-            linesAdded: 0,
-            linesDeleted: 0,
-            netChange: 0,
-            currentBranch: '',
-            baseBranch: p.baseBranch || 'staging'
-          }
-          
-          // Check if main repo has uncommitted changes
-          let mainRepoHasChanges = false
-          let mainRepoChangedFiles: string[] = []
-          
-          try {
-            const projectPath = configManager.getProjectPath(p.name)
-            if (fs.existsSync(projectPath)) {
-              const mainRepoStatus = await execAsync('git status --short', { cwd: projectPath })
-              const changedFiles = mainRepoStatus.stdout.trim().split('\n').filter(line => line)
-              mainRepoHasChanges = changedFiles.length > 0
-              mainRepoChangedFiles = changedFiles.map(line => line.substring(3)) // Remove status prefix
+        projectDetails: await Promise.all(
+          feature.projects.map(async (p: any) => {
+            const stats = projectStats[p.name] || {
+              commits: 0,
+              filesChanged: 0,
+              linesAdded: 0,
+              linesDeleted: 0,
+              netChange: 0,
+              currentBranch: '',
+              baseBranch: p.baseBranch || 'staging',
             }
-          } catch (error) {
-            // Ignore errors
-          }
-          
-          return {
-            name: p.name,
-            status: p.status,
-            worktreePath: p.worktreePath,
-            lastUpdated: p.lastUpdated || feature.updatedAt,
-            baseBranch: p.baseBranch,
-            gitStats: stats,
-            mainRepoHasChanges,
-            mainRepoChangedFiles
-          }
-        }))
+
+            // Check if main repo has uncommitted changes
+            let mainRepoHasChanges = false
+            let mainRepoChangedFiles: string[] = []
+
+            try {
+              const projectPath = configManager.getProjectPath(p.name)
+              if (fs.existsSync(projectPath)) {
+                const mainRepoStatus = await execAsync('git status --short', { cwd: projectPath })
+                const changedFiles = mainRepoStatus.stdout
+                  .trim()
+                  .split('\n')
+                  .filter((line) => line)
+                mainRepoHasChanges = changedFiles.length > 0
+                mainRepoChangedFiles = changedFiles.map((line) => line.substring(3)) // Remove status prefix
+              }
+            } catch {
+              // Ignore errors
+            }
+
+            return {
+              name: p.name,
+              status: p.status,
+              worktreePath: p.worktreePath,
+              lastUpdated: p.lastUpdated || feature.updatedAt,
+              baseBranch: p.baseBranch,
+              gitStats: stats,
+              mainRepoHasChanges,
+              mainRepoChangedFiles,
+            }
+          }),
+        ),
       }
     } catch (error: any) {
-      console.error('Failed to get feature stats:', error)
+      log.error('Failed to get feature stats:', error)
       return null
     }
   })
@@ -1126,15 +1170,15 @@ export function registerIpcHandlers() {
         commits: 0,
         filesChanged: 0,
         linesAdded: 0,
-        linesDeleted: 0
+        linesDeleted: 0,
       }
     } catch (error: any) {
-      console.error('Failed to get git stats:', error)
+      log.error('Failed to get git stats:', error)
       return {
         commits: 0,
         filesChanged: 0,
         linesAdded: 0,
-        linesDeleted: 0
+        linesDeleted: 0,
       }
     }
   })
@@ -1142,140 +1186,213 @@ export function registerIpcHandlers() {
   // Sync worktree paths with actual git worktrees
   ipcMain.handle('stats:syncWorktrees', async (_, featureName: string) => {
     try {
-      console.log('🔄 Manual sync requested for feature:', featureName)
+      log.info('🔄 Manual sync requested for feature:', featureName)
       await syncWorktreePaths(featureName)
       return { success: true }
     } catch (error: any) {
-      console.error('Failed to sync worktrees:', error)
+      log.error('Failed to sync worktrees:', error)
       return { success: false, error: error.message }
     }
   })
 
   // Get detailed file diffs for a project
-  ipcMain.handle('stats:getProjectDiff', async (_, featureName: string, projectName: string, ignoreWhitespace: boolean = false) => {
+  ipcMain.handle(
+    'stats:getProjectDiff',
+    async (_, featureName: string, projectName: string, ignoreWhitespace: boolean = false) => {
+      try {
+        const wsFlag = ignoreWhitespace ? ' (ignoring whitespace)' : ''
+        log.info(`📝 Getting diff for project: ${projectName} in feature: ${featureName}${wsFlag}`)
+
+        const configManager = getConfigManager()
+        const feature = configManager.getFeature(featureName)
+
+        if (!feature) {
+          log.info('❌ Feature not found:', featureName)
+          return null
+        }
+
+        const project = feature.projects.find((p: any) => p.name === projectName)
+        if (!project || !project.worktreePath) {
+          log.info('❌ Project not found or no worktree:', projectName)
+          return null
+        }
+
+        const fs = require('fs')
+        if (!fs.existsSync(project.worktreePath)) {
+          log.info('❌ Worktree path does not exist:', project.worktreePath)
+          return null
+        }
+
+        const baseBranch = project.baseBranch || 'staging'
+
+        // Add whitespace ignore flag if requested
+        const whitespaceFlag = ignoreWhitespace ? ' --ignore-all-space' : ''
+
+        // Collect all changed files from two sources:
+        // 1. Committed changes: origin/baseBranch...HEAD
+        // 2. Working directory changes: HEAD (unstaged + staged)
+
+        const fileMap = new Map<string, { status: string; diff: string; source: string }>()
+
+        // 1. Get committed changes (branch diff)
+        try {
+          const branchFilesResult = await execAsync(
+            `git diff origin/${baseBranch}...HEAD --name-status${whitespaceFlag}`,
+            { cwd: project.worktreePath },
+          )
+
+          const branchFileLines = branchFilesResult.stdout
+            .trim()
+            .split('\n')
+            .filter((line) => line)
+
+          for (const line of branchFileLines) {
+            const [status, ...pathParts] = line.split('\t')
+            const filePath = pathParts.join('\t')
+
+            if (!filePath) continue
+
+            // Get the diff for this specific file
+            let diff = ''
+            try {
+              const diffResult = await execAsync(
+                `git diff origin/${baseBranch}...HEAD${whitespaceFlag} -- "${filePath}"`,
+                { cwd: project.worktreePath },
+              )
+              diff = diffResult.stdout
+            } catch (error) {
+              log.error(`Failed to get branch diff for ${filePath}:`, error)
+            }
+
+            fileMap.set(filePath, { status, diff, source: 'committed' })
+          }
+
+          log.info(`Found ${branchFileLines.length} committed changes`)
+        } catch {
+          log.info('No committed changes found')
+        }
+
+        // 2. Get working directory changes (unstaged + staged)
+        try {
+          const workingFilesResult = await execAsync(`git diff HEAD --name-status${whitespaceFlag}`, {
+            cwd: project.worktreePath,
+          })
+
+          const workingFileLines = workingFilesResult.stdout
+            .trim()
+            .split('\n')
+            .filter((line) => line)
+
+          for (const line of workingFileLines) {
+            const [status, ...pathParts] = line.split('\t')
+            const filePath = pathParts.join('\t')
+
+            if (!filePath) continue
+
+            // Get the diff for this specific file
+            let diff = ''
+            try {
+              const diffResult = await execAsync(`git diff HEAD${whitespaceFlag} -- "${filePath}"`, {
+                cwd: project.worktreePath,
+              })
+              diff = diffResult.stdout
+            } catch (error) {
+              log.error(`Failed to get working diff for ${filePath}:`, error)
+            }
+
+            // Working directory changes override committed changes (more current)
+            fileMap.set(filePath, { status, diff, source: 'working' })
+          }
+
+          log.info(`Found ${workingFileLines.length} working directory changes`)
+        } catch {
+          log.info('No working directory changes found')
+        }
+
+        // Convert map to array
+        const files: any[] = Array.from(fileMap.entries()).map(([path, data]) => ({
+          path,
+          status: data.status, // M (modified), A (added), D (deleted)
+          diff: data.diff,
+          source: data.source, // 'committed' or 'working'
+        }))
+
+        log.info(`✅ Found ${files.length} total changed files in ${projectName}`)
+
+        return {
+          projectName,
+          baseBranch,
+          files,
+        }
+      } catch (error: any) {
+        log.error('Failed to get project diff:', error)
+        return null
+      }
+    },
+  )
+
+  // Get commit history for a project branch
+  ipcMain.handle('stats:getProjectCommits', async (_, featureName: string, projectName: string) => {
     try {
-      const wsFlag = ignoreWhitespace ? ' (ignoring whitespace)' : ''
-      console.log(`📝 Getting diff for project: ${projectName} in feature: ${featureName}${wsFlag}`)
-      
+      log.info(`📜 Getting commits for project: ${projectName} in feature: ${featureName}`)
+
       const configManager = getConfigManager()
       const feature = configManager.getFeature(featureName)
-      
+
       if (!feature) {
-        console.log('❌ Feature not found:', featureName)
+        log.info('❌ Feature not found:', featureName)
         return null
       }
-      
+
       const project = feature.projects.find((p: any) => p.name === projectName)
       if (!project || !project.worktreePath) {
-        console.log('❌ Project not found or no worktree:', projectName)
+        log.info('❌ Project not found or no worktree:', projectName)
         return null
       }
-      
+
       const fs = require('fs')
       if (!fs.existsSync(project.worktreePath)) {
-        console.log('❌ Worktree path does not exist:', project.worktreePath)
+        log.info('❌ Worktree path does not exist:', project.worktreePath)
         return null
       }
-      
+
       const baseBranch = project.baseBranch || 'staging'
-      
-      // Add whitespace ignore flag if requested
-      const whitespaceFlag = ignoreWhitespace ? ' --ignore-all-space' : ''
-      
-      // Collect all changed files from two sources:
-      // 1. Committed changes: origin/baseBranch...HEAD
-      // 2. Working directory changes: HEAD (unstaged + staged)
-      
-      const fileMap = new Map<string, { status: string, diff: string, source: string }>()
-      
-      // 1. Get committed changes (branch diff)
+
+      let commits: any[] = []
       try {
-        const branchFilesResult = await execAsync(
-          `git diff origin/${baseBranch}...HEAD --name-status${whitespaceFlag}`,
-          { cwd: project.worktreePath }
+        const result = await execAsync(
+          `git log origin/${baseBranch}..HEAD --format='%H%x00%h%x00%s%x00%an%x00%aI%x00%P' --reverse`,
+          { cwd: project.worktreePath },
         )
-        
-        const branchFileLines = branchFilesResult.stdout.trim().split('\n').filter(line => line)
-        
-        for (const line of branchFileLines) {
-          const [status, ...pathParts] = line.split('\t')
-          const filePath = pathParts.join('\t')
-          
-          if (!filePath) continue
-          
-          // Get the diff for this specific file
-          let diff = ''
-          try {
-            const diffResult = await execAsync(
-              `git diff origin/${baseBranch}...HEAD${whitespaceFlag} -- "${filePath}"`,
-              { cwd: project.worktreePath }
-            )
-            diff = diffResult.stdout
-          } catch (error) {
-            console.error(`Failed to get branch diff for ${filePath}:`, error)
+
+        const lines = result.stdout
+          .trim()
+          .split('\n')
+          .filter((line: string) => line)
+        commits = lines.map((line: string) => {
+          const [fullHash, shortHash, subject, authorName, authorDate, parents] = line.split('\0')
+          return {
+            fullHash,
+            shortHash,
+            subject,
+            authorName,
+            authorDate,
+            isMerge: parents ? parents.includes(' ') : false,
           }
-          
-          fileMap.set(filePath, { status, diff, source: 'committed' })
-        }
-        
-        console.log(`Found ${branchFileLines.length} committed changes`)
-      } catch (error) {
-        console.log('No committed changes found')
+        })
+      } catch {
+        log.info('No commits found (branch may not have diverged yet)')
       }
-      
-      // 2. Get working directory changes (unstaged + staged)
-      try {
-        const workingFilesResult = await execAsync(
-          `git diff HEAD --name-status${whitespaceFlag}`,
-          { cwd: project.worktreePath }
-        )
-        
-        const workingFileLines = workingFilesResult.stdout.trim().split('\n').filter(line => line)
-        
-        for (const line of workingFileLines) {
-          const [status, ...pathParts] = line.split('\t')
-          const filePath = pathParts.join('\t')
-          
-          if (!filePath) continue
-          
-          // Get the diff for this specific file
-          let diff = ''
-          try {
-            const diffResult = await execAsync(
-              `git diff HEAD${whitespaceFlag} -- "${filePath}"`,
-              { cwd: project.worktreePath }
-            )
-            diff = diffResult.stdout
-          } catch (error) {
-            console.error(`Failed to get working diff for ${filePath}:`, error)
-          }
-          
-          // Working directory changes override committed changes (more current)
-          fileMap.set(filePath, { status, diff, source: 'working' })
-        }
-        
-        console.log(`Found ${workingFileLines.length} working directory changes`)
-      } catch (error) {
-        console.log('No working directory changes found')
-      }
-      
-      // Convert map to array
-      const files: any[] = Array.from(fileMap.entries()).map(([path, data]) => ({
-        path,
-        status: data.status, // M (modified), A (added), D (deleted)
-        diff: data.diff,
-        source: data.source // 'committed' or 'working'
-      }))
-      
-      console.log(`✅ Found ${files.length} total changed files in ${projectName}`)
-      
+
+      log.info(`✅ Found ${commits.length} commits in ${projectName}`)
+
       return {
         projectName,
         baseBranch,
-        files
+        commits,
       }
     } catch (error: any) {
-      console.error('Failed to get project diff:', error)
+      log.error('Failed to get project commits:', error)
       return null
     }
   })
@@ -1286,27 +1403,27 @@ export function registerIpcHandlers() {
   ipcMain.handle('terminal:create', async (event, { cols, rows, cwd }) => {
     try {
       const fs = require('fs')
-      
+
       // Verify cwd exists
       if (!fs.existsSync(cwd)) {
-        console.error(`Working directory does not exist: ${cwd}, using home directory`)
+        log.error(`Working directory does not exist: ${cwd}, using home directory`)
         cwd = os.homedir()
       }
-      
+
       // Use zsh for macOS (default since Catalina), bash for others
       const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh'
-      
-      console.log(`Creating terminal:`)
-      console.log(`  Shell: ${shell}`)
-      console.log(`  CWD: ${cwd}`)
-      console.log(`  Size: ${cols}x${rows}`)
-      
+
+      log.info(`Creating terminal:`)
+      log.info(`  Shell: ${shell}`)
+      log.info(`  CWD: ${cwd}`)
+      log.info(`  Size: ${cols}x${rows}`)
+
       const ptyProcess = pty.spawn(shell, [], {
         name: 'xterm-color',
         cols: cols || 80,
         rows: rows || 24,
         cwd: cwd,
-        env: process.env as any
+        env: process.env as any,
       })
 
       const pid = ptyProcess.pid
@@ -1324,10 +1441,9 @@ export function registerIpcHandlers() {
         terminals.delete(pid)
       })
 
-
       return { pid, success: true }
     } catch (error: any) {
-      console.error('Failed to create terminal:', error)
+      log.error('Failed to create terminal:', error)
       return { success: false, error: error.message }
     }
   })
@@ -1377,7 +1493,7 @@ export function registerIpcHandlers() {
     try {
       app.setLoginItemSettings({
         openAtLogin: enabled,
-        openAsHidden: false
+        openAsHidden: false,
       })
       return { success: true }
     } catch (error: any) {
@@ -1395,7 +1511,7 @@ export function registerIpcHandlers() {
   })
 
   // ==================== STORAGE & SETTINGS ====================
-  
+
   ipcMain.handle('settings:get', async (_, key: string) => {
     try {
       const { storage } = await import('./storage')
@@ -1489,7 +1605,108 @@ export function registerIpcHandlers() {
     }
   })
 
-  console.log('✅ IPC handlers registered with real Nexwork CLI')
+  // Git conflict detection
+  ipcMain.handle('git:getConflictFiles', async (_, workingDir: string) => {
+    const { exec } = require('child_process')
+    return new Promise((resolve) => {
+      exec(
+        'git diff --name-only --diff-filter=U',
+        { cwd: workingDir, encoding: 'utf-8' },
+        (error: any, stdout: string) => {
+          if (error && !stdout) {
+            resolve({ success: false, files: [] })
+          } else {
+            const files = stdout.trim().split('\n').filter(Boolean)
+            resolve({ success: true, files })
+          }
+        },
+      )
+    })
+  })
+
+  // Pull Request creation via gh CLI
+  ipcMain.handle('pr:checkGhCli', async () => {
+    const { exec } = require('child_process')
+    return new Promise((resolve) => {
+      exec('gh auth status', { encoding: 'utf-8', timeout: 10000 }, (error: any, stdout: string, stderr: string) => {
+        if (error) {
+          const output = stderr || error.message || ''
+          const isInstalled = !output.includes('command not found') && !output.includes('not recognized')
+          resolve({ installed: isInstalled, authenticated: false })
+        } else {
+          resolve({ installed: true, authenticated: true })
+        }
+      })
+    })
+  })
+
+  ipcMain.handle(
+    'pr:create',
+    async (
+      _,
+      projects: Array<{ projectName: string; workingDir: string; branch: string; baseBranch: string }>,
+      options: { title: string; body: string; draft: boolean },
+    ) => {
+      const { exec } = require('child_process')
+      const results: Array<{ projectName: string; prUrl?: string; error?: string }> = []
+
+      for (const project of projects) {
+        try {
+          // Push first
+          const pushResult: any = await new Promise((resolve) => {
+            exec(
+              `git push -u origin ${project.branch}`,
+              {
+                cwd: project.workingDir,
+                encoding: 'utf-8',
+                timeout: 60000,
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+              },
+              (error: any, stdout: string, stderr: string) => {
+                resolve({ success: !error, output: stdout, error: stderr || error?.message })
+              },
+            )
+          })
+
+          if (!pushResult.success && !pushResult.error?.includes('Everything up-to-date')) {
+            results.push({ projectName: project.projectName, error: `Push failed: ${pushResult.error}` })
+            continue
+          }
+
+          // Create PR
+          const draftFlag = options.draft ? ' --draft' : ''
+          const title = options.title.replace(/"/g, '\\"')
+          const body = options.body.replace(/"/g, '\\"')
+          const prResult: any = await new Promise((resolve) => {
+            exec(
+              `gh pr create --base "${project.baseBranch}" --head "${project.branch}" --title "${title}" --body "${body}"${draftFlag}`,
+              {
+                cwd: project.workingDir,
+                encoding: 'utf-8',
+                timeout: 30000,
+              },
+              (error: any, stdout: string, stderr: string) => {
+                resolve({ success: !error, output: stdout, error: stderr || error?.message })
+              },
+            )
+          })
+
+          if (prResult.success) {
+            const prUrl = prResult.output.trim().split('\n').pop() || ''
+            results.push({ projectName: project.projectName, prUrl })
+          } else {
+            results.push({ projectName: project.projectName, error: prResult.error })
+          }
+        } catch (error: any) {
+          results.push({ projectName: project.projectName, error: error.message })
+        }
+      }
+
+      return { results }
+    },
+  )
+
+  log.info('✅ IPC handlers registered with real Nexwork CLI')
 }
 
 // Export for use in other modules
@@ -1500,29 +1717,29 @@ export async function setWorkspaceOnStartup(workspacePath: string): Promise<void
   try {
     // Security: Validate workspace path
     if (!validateWorkspacePath(workspacePath)) {
-      console.warn('⚠️ Invalid workspace path in settings:', workspacePath)
+      log.warn('⚠️ Invalid workspace path in settings:', workspacePath)
       return
     }
 
     currentWorkspaceRoot = workspacePath
-    console.log('✅ Workspace restored on startup:', currentWorkspaceRoot)
-    
+    log.info('✅ Workspace restored on startup:', currentWorkspaceRoot)
+
     // Initialize config for the workspace
     try {
       const configManager = getConfigManager()
-      
+
       // Check if config exists, if not initialize it
       const configPath = path.join(currentWorkspaceRoot, '.multi-repo-config.json')
       if (!fs.existsSync(configPath)) {
-        console.log('📝 Initializing config for restored workspace...')
+        log.info('📝 Initializing config for restored workspace...')
         await configManager.initialize()
       }
-      
-      console.log('✅ Projects loaded for workspace:', currentWorkspaceRoot)
+
+      log.info('✅ Projects loaded for workspace:', currentWorkspaceRoot)
     } catch (initError) {
-      console.warn('⚠️ Could not initialize config on startup:', initError)
+      log.warn('⚠️ Could not initialize config on startup:', initError)
     }
   } catch (error: any) {
-    console.error('❌ Failed to set workspace on startup:', error)
+    log.error('❌ Failed to set workspace on startup:', error)
   }
 }

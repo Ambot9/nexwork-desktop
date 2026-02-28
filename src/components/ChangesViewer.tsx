@@ -27,7 +27,6 @@ interface ProjectDiff {
 }
 
 function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
-  
   const [activeProject, setActiveProject] = useState<string>(projects[0]?.name || '')
   const [projectDiffs, setProjectDiffs] = useState<{ [key: string]: ProjectDiff }>({})
   const [loading, setLoading] = useState<{ [key: string]: boolean }>({})
@@ -40,10 +39,8 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
   useEffect(() => {
     const loadAllDiffs = async () => {
       // Load all diffs in parallel for better performance
-      const loadPromises = projects
-        .filter(p => p.worktreePath)
-        .map(p => loadProjectDiff(p.name, false)) // false = show loading spinner
-      
+      const loadPromises = projects.filter((p) => p.worktreePath).map((p) => loadProjectDiff(p.name, false)) // false = show loading spinner
+
       await Promise.all(loadPromises)
     }
     loadAllDiffs()
@@ -53,10 +50,8 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
   useEffect(() => {
     const reloadAllDiffs = async () => {
       // Silently reload all project diffs (silent = true to avoid loading spinners)
-      const loadPromises = projects
-        .filter(p => p.worktreePath)
-        .map(p => loadProjectDiff(p.name, true)) // true = silent mode
-      
+      const loadPromises = projects.filter((p) => p.worktreePath).map((p) => loadProjectDiff(p.name, true)) // true = silent mode
+
       await Promise.all(loadPromises)
     }
 
@@ -76,14 +71,14 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
   const loadProjectDiff = async (projectName: string, silent = false) => {
     if (!silent) {
-      setLoading(prev => ({ ...prev, [projectName]: true }))
+      setLoading((prev) => ({ ...prev, [projectName]: true }))
     }
-    
+
     try {
       const diff = await window.nexworkAPI.stats.getProjectDiff(featureName, projectName, false)
-      
+
       if (diff) {
-        setProjectDiffs(prev => {
+        setProjectDiffs((prev) => {
           // Only update if content actually changed (prevent unnecessary re-renders)
           const prevDiff = prev[projectName]
           if (prevDiff && JSON.stringify(prevDiff.files) === JSON.stringify(diff.files)) {
@@ -91,7 +86,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
           }
           return { ...prev, [projectName]: diff }
         })
-        
+
         // Auto-select first file (only on initial load, not silent reload)
         if (!silent && diff.files.length > 0 && !selectedFile) {
           setSelectedFile(diff.files[0].path)
@@ -101,41 +96,53 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
       console.error('Failed to load project diff:', error)
     } finally {
       if (!silent) {
-        setLoading(prev => ({ ...prev, [projectName]: false }))
+        setLoading((prev) => ({ ...prev, [projectName]: false }))
       }
     }
   }
 
   const getFileIcon = (status: string) => {
     switch (status) {
-      case 'A': return <FilePlus size={16} color="#52c41a" />
-      case 'D': return <FileX size={16} color="#ff4d4f" />
-      case 'M': return <FileText size={16} color="#1890ff" />
-      default: return <FileCode size={16} />
+      case 'A':
+        return <FilePlus size={16} color="#52c41a" />
+      case 'D':
+        return <FileX size={16} color="#ff4d4f" />
+      case 'M':
+        return <FileText size={16} color="#1890ff" />
+      default:
+        return <FileCode size={16} />
     }
   }
 
   const getStatusTag = (status: string) => {
     switch (status) {
-      case 'A': return <Tag color="success">Added</Tag>
-      case 'D': return <Tag color="error">Deleted</Tag>
-      case 'M': return <Tag color="processing">Modified</Tag>
-      default: return <Tag>{status}</Tag>
+      case 'A':
+        return <Tag color="success">Added</Tag>
+      case 'D':
+        return <Tag color="error">Deleted</Tag>
+      case 'M':
+        return <Tag color="processing">Modified</Tag>
+      default:
+        return <Tag>{status}</Tag>
     }
   }
 
   const parseDiff = (diff: string) => {
     const lines = diff.split('\n')
-    const hunks: Array<{ before: string[], after: string[], lineNumbers: { before: number, after: number } }> = []
-    
+    const hunks: Array<{ before: any[]; after: any[]; lineNumbers: { before: number; after: number } }> = []
+
     let currentHunk: any = null
     let beforeLineNum = 0
     let afterLineNum = 0
 
     for (const line of lines) {
       // Skip diff headers
-      if (line.startsWith('diff --git') || line.startsWith('index ') || 
-          line.startsWith('---') || line.startsWith('+++')) {
+      if (
+        line.startsWith('diff --git') ||
+        line.startsWith('index ') ||
+        line.startsWith('---') ||
+        line.startsWith('+++')
+      ) {
         continue
       }
 
@@ -144,7 +151,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
         if (currentHunk) {
           hunks.push(currentHunk)
         }
-        
+
         const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@/)
         if (match) {
           beforeLineNum = parseInt(match[1])
@@ -152,7 +159,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
           currentHunk = {
             before: [],
             after: [],
-            lineNumbers: { before: beforeLineNum, after: afterLineNum }
+            lineNumbers: { before: beforeLineNum, after: afterLineNum },
           }
         }
         continue
@@ -194,18 +201,28 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
     const hunks = parseDiff(fileChange.diff)
 
     return (
-      <div style={{ fontFamily: 'monospace', fontSize: 13, overflow: 'auto', border: '1px solid #e8e8e8', borderRadius: 4 }}>
-        <div style={{ 
-          padding: '10px 16px', 
-          background: '#fafafa', 
-          fontWeight: 600, 
+      <div
+        style={{
+          fontFamily: 'monospace',
           fontSize: 13,
-          borderBottom: '2px solid #d9d9d9',
-          position: 'sticky',
-          top: 0,
-          zIndex: 1,
-          color: '#595959'
-        }}>
+          overflow: 'auto',
+          border: '1px solid #e8e8e8',
+          borderRadius: 4,
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 16px',
+            background: '#fafafa',
+            fontWeight: 600,
+            fontSize: 13,
+            borderBottom: '2px solid #d9d9d9',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+            color: '#595959',
+          }}
+        >
           Unified Diff
         </div>
         {hunks.map((hunk, idx) => (
@@ -215,11 +232,11 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
               const combined: any[] = []
               let beforeIdx = 0
               let afterIdx = 0
-              
+
               while (beforeIdx < hunk.before.length || afterIdx < hunk.after.length) {
                 const beforeLine = hunk.before[beforeIdx]
                 const afterLine = hunk.after[afterIdx]
-                
+
                 if (beforeLine?.type === 'removed') {
                   combined.push({ ...beforeLine, side: 'removed' })
                   beforeIdx++
@@ -235,43 +252,57 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                   afterIdx++
                 }
               }
-              
+
               return combined.map((line, lineIdx) => (
                 <div
                   key={lineIdx}
                   style={{
                     display: 'flex',
-                    background: line.side === 'removed' ? '#ffeef0' : 
-                               line.side === 'added' ? '#f6ffed' : 'transparent',
+                    background: line.side === 'removed' ? '#ffeef0' : line.side === 'added' ? '#f6ffed' : 'transparent',
                     padding: '3px 12px',
-                    borderLeft: line.side === 'removed' ? '3px solid #ff4d4f' : 
-                               line.side === 'added' ? '3px solid #52c41a' : '3px solid transparent',
-                    minHeight: '22px'
+                    borderLeft:
+                      line.side === 'removed'
+                        ? '3px solid #ff4d4f'
+                        : line.side === 'added'
+                          ? '3px solid #52c41a'
+                          : '3px solid transparent',
+                    minHeight: '22px',
                   }}
                 >
-                  <div style={{ 
-                    width: 30, 
-                    color: '#8c8c8c', 
-                    textAlign: 'center', 
-                    marginRight: 8,
-                    userSelect: 'none',
-                    fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                    fontSize: 12
-                  }}>
+                  <div
+                    style={{
+                      width: 30,
+                      color: '#8c8c8c',
+                      textAlign: 'center',
+                      marginRight: 8,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
                     {line.side === 'removed' ? '-' : line.side === 'added' ? '+' : ' '}
                   </div>
-                  <div style={{ 
-                    width: 50, 
-                    color: '#8c8c8c', 
-                    textAlign: 'right', 
-                    marginRight: 16,
-                    userSelect: 'none',
-                    fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                    fontSize: 12
-                  }}>
+                  <div
+                    style={{
+                      width: 50,
+                      color: '#8c8c8c',
+                      textAlign: 'right',
+                      marginRight: 16,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
                     {line.lineNum || ''}
                   </div>
-                  <div style={{ flex: 1, whiteSpace: 'pre', fontFamily: 'Monaco, Menlo, Consolas, monospace', lineHeight: '1.5' }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'pre',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      lineHeight: '1.5',
+                    }}
+                  >
                     {line.content}
                   </div>
                 </div>
@@ -291,99 +322,135 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
     const hunks = parseDiff(fileChange.diff)
 
     return (
-      <div style={{ fontFamily: 'monospace', fontSize: 13, overflow: 'auto', border: '1px solid #e8e8e8', borderRadius: 4 }}>
-        <div style={{ 
-          padding: '10px 16px', 
-          background: '#fafafa', 
-          fontWeight: 600, 
+      <div
+        style={{
+          fontFamily: 'monospace',
           fontSize: 13,
-          borderBottom: '2px solid #d9d9d9',
-          position: 'sticky',
-          top: 0,
-          zIndex: 1,
-          color: '#595959'
-        }}>
+          overflow: 'auto',
+          border: '1px solid #e8e8e8',
+          borderRadius: 4,
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 16px',
+            background: '#fafafa',
+            fontWeight: 600,
+            fontSize: 13,
+            borderBottom: '2px solid #d9d9d9',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+            color: '#595959',
+          }}
+        >
           Changes Only (Hunks)
         </div>
         {hunks.map((hunk, idx) => (
           <div key={idx} style={{ marginBottom: 16, borderBottom: '1px solid #e8e8e8', paddingBottom: 16 }}>
             {/* Show removed lines */}
-            {hunk.before.filter((l: any) => l.type === 'removed').map((line: any, lineIdx: number) => (
-              <div
-                key={`before-${lineIdx}`}
-                style={{
-                  display: 'flex',
-                  background: '#ffeef0',
-                  padding: '3px 12px',
-                  borderLeft: '3px solid #ff4d4f',
-                  minHeight: '22px'
-                }}
-              >
-                <div style={{ 
-                  width: 30, 
-                  color: '#ff4d4f', 
-                  textAlign: 'center', 
-                  marginRight: 8,
-                  userSelect: 'none',
-                  fontWeight: 600
-                }}>
-                  -
+            {hunk.before
+              .filter((l: any) => l.type === 'removed')
+              .map((line: any, lineIdx: number) => (
+                <div
+                  key={`before-${lineIdx}`}
+                  style={{
+                    display: 'flex',
+                    background: '#ffeef0',
+                    padding: '3px 12px',
+                    borderLeft: '3px solid #ff4d4f',
+                    minHeight: '22px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 30,
+                      color: '#ff4d4f',
+                      textAlign: 'center',
+                      marginRight: 8,
+                      userSelect: 'none',
+                      fontWeight: 600,
+                    }}
+                  >
+                    -
+                  </div>
+                  <div
+                    style={{
+                      width: 50,
+                      color: '#8c8c8c',
+                      textAlign: 'right',
+                      marginRight: 16,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
+                    {line.lineNum}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'pre',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      lineHeight: '1.5',
+                    }}
+                  >
+                    {line.content}
+                  </div>
                 </div>
-                <div style={{ 
-                  width: 50, 
-                  color: '#8c8c8c', 
-                  textAlign: 'right', 
-                  marginRight: 16,
-                  userSelect: 'none',
-                  fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                  fontSize: 12
-                }}>
-                  {line.lineNum}
-                </div>
-                <div style={{ flex: 1, whiteSpace: 'pre', fontFamily: 'Monaco, Menlo, Consolas, monospace', lineHeight: '1.5' }}>
-                  {line.content}
-                </div>
-              </div>
-            ))}
-            
+              ))}
+
             {/* Show added lines */}
-            {hunk.after.filter((l: any) => l.type === 'added').map((line: any, lineIdx: number) => (
-              <div
-                key={`after-${lineIdx}`}
-                style={{
-                  display: 'flex',
-                  background: '#f6ffed',
-                  padding: '3px 12px',
-                  borderLeft: '3px solid #52c41a',
-                  minHeight: '22px'
-                }}
-              >
-                <div style={{ 
-                  width: 30, 
-                  color: '#52c41a', 
-                  textAlign: 'center', 
-                  marginRight: 8,
-                  userSelect: 'none',
-                  fontWeight: 600
-                }}>
-                  +
+            {hunk.after
+              .filter((l: any) => l.type === 'added')
+              .map((line: any, lineIdx: number) => (
+                <div
+                  key={`after-${lineIdx}`}
+                  style={{
+                    display: 'flex',
+                    background: '#f6ffed',
+                    padding: '3px 12px',
+                    borderLeft: '3px solid #52c41a',
+                    minHeight: '22px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 30,
+                      color: '#52c41a',
+                      textAlign: 'center',
+                      marginRight: 8,
+                      userSelect: 'none',
+                      fontWeight: 600,
+                    }}
+                  >
+                    +
+                  </div>
+                  <div
+                    style={{
+                      width: 50,
+                      color: '#8c8c8c',
+                      textAlign: 'right',
+                      marginRight: 16,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
+                    {line.lineNum}
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'pre',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      lineHeight: '1.5',
+                    }}
+                  >
+                    {line.content}
+                  </div>
                 </div>
-                <div style={{ 
-                  width: 50, 
-                  color: '#8c8c8c', 
-                  textAlign: 'right', 
-                  marginRight: 16,
-                  userSelect: 'none',
-                  fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                  fontSize: 12
-                }}>
-                  {line.lineNum}
-                </div>
-                <div style={{ flex: 1, whiteSpace: 'pre', fontFamily: 'Monaco, Menlo, Consolas, monospace', lineHeight: '1.5' }}>
-                  {line.content}
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         ))}
       </div>
@@ -398,20 +465,31 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
     const hunks = parseDiff(fileChange.diff)
 
     return (
-      <div style={{ display: 'flex', fontFamily: 'monospace', fontSize: 13, overflow: 'auto', border: '1px solid #e8e8e8', borderRadius: 4 }}>
+      <div
+        style={{
+          display: 'flex',
+          fontFamily: 'monospace',
+          fontSize: 13,
+          overflow: 'auto',
+          border: '1px solid #e8e8e8',
+          borderRadius: 4,
+        }}
+      >
         {/* Before (Left side) */}
         <div style={{ flex: 1, borderRight: '2px solid #d9d9d9' }}>
-          <div style={{ 
-            padding: '10px 16px', 
-            background: '#fafafa', 
-            fontWeight: 600, 
-            fontSize: 13,
-            borderBottom: '2px solid #d9d9d9',
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-            color: '#595959'
-          }}>
+          <div
+            style={{
+              padding: '10px 16px',
+              background: '#fafafa',
+              fontWeight: 600,
+              fontSize: 13,
+              borderBottom: '2px solid #d9d9d9',
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+              color: '#595959',
+            }}
+          >
             Before
           </div>
           {hunks.map((hunk, idx) => (
@@ -421,25 +499,33 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                   key={lineIdx}
                   style={{
                     display: 'flex',
-                    background: line.type === 'removed' ? '#ffeef0' : 
-                               line.type === 'empty' ? '#f5f5f5' : 'transparent',
+                    background: line.type === 'removed' ? '#ffeef0' : line.type === 'empty' ? '#f5f5f5' : 'transparent',
                     padding: '3px 12px',
                     borderLeft: line.type === 'removed' ? '3px solid #ff4d4f' : '3px solid transparent',
-                    minHeight: '22px'
+                    minHeight: '22px',
                   }}
                 >
-                  <div style={{ 
-                    width: 50, 
-                    color: '#8c8c8c', 
-                    textAlign: 'right', 
-                    marginRight: 16,
-                    userSelect: 'none',
-                    fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                    fontSize: 12
-                  }}>
+                  <div
+                    style={{
+                      width: 50,
+                      color: '#8c8c8c',
+                      textAlign: 'right',
+                      marginRight: 16,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
                     {line.lineNum || ''}
                   </div>
-                  <div style={{ flex: 1, whiteSpace: 'pre', fontFamily: 'Monaco, Menlo, Consolas, monospace', lineHeight: '1.5' }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'pre',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      lineHeight: '1.5',
+                    }}
+                  >
                     {line.content}
                   </div>
                 </div>
@@ -450,17 +536,19 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
         {/* After (Right side) */}
         <div style={{ flex: 1 }}>
-          <div style={{ 
-            padding: '10px 16px', 
-            background: '#fafafa', 
-            fontWeight: 600, 
-            fontSize: 13,
-            borderBottom: '2px solid #d9d9d9',
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-            color: '#595959'
-          }}>
+          <div
+            style={{
+              padding: '10px 16px',
+              background: '#fafafa',
+              fontWeight: 600,
+              fontSize: 13,
+              borderBottom: '2px solid #d9d9d9',
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+              color: '#595959',
+            }}
+          >
             After
           </div>
           {hunks.map((hunk, idx) => (
@@ -470,25 +558,33 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                   key={lineIdx}
                   style={{
                     display: 'flex',
-                    background: line.type === 'added' ? '#f6ffed' : 
-                               line.type === 'empty' ? '#f5f5f5' : 'transparent',
+                    background: line.type === 'added' ? '#f6ffed' : line.type === 'empty' ? '#f5f5f5' : 'transparent',
                     padding: '3px 12px',
                     borderLeft: line.type === 'added' ? '3px solid #52c41a' : '3px solid transparent',
-                    minHeight: '22px'
+                    minHeight: '22px',
                   }}
                 >
-                  <div style={{ 
-                    width: 50, 
-                    color: '#8c8c8c', 
-                    textAlign: 'right', 
-                    marginRight: 16,
-                    userSelect: 'none',
-                    fontFamily: 'Monaco, Menlo, Consolas, monospace',
-                    fontSize: 12
-                  }}>
+                  <div
+                    style={{
+                      width: 50,
+                      color: '#8c8c8c',
+                      textAlign: 'right',
+                      marginRight: 16,
+                      userSelect: 'none',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      fontSize: 12,
+                    }}
+                  >
                     {line.lineNum || ''}
                   </div>
-                  <div style={{ flex: 1, whiteSpace: 'pre', fontFamily: 'Monaco, Menlo, Consolas, monospace', lineHeight: '1.5' }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      whiteSpace: 'pre',
+                      fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                      lineHeight: '1.5',
+                    }}
+                  >
                     {line.content}
                   </div>
                 </div>
@@ -501,7 +597,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
   }
 
   // Filter projects with worktrees
-  const projectsWithWorktrees = projects.filter(p => p.worktreePath)
+  const projectsWithWorktrees = projects.filter((p) => p.worktreePath)
 
   if (projectsWithWorktrees.length === 0) {
     return null
@@ -528,19 +624,23 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
     return (
       <div>
         {/* Toolbar */}
-        <div style={{ 
-          padding: '12px 16px', 
-          background: '#fafafa', 
-          border: '1px solid #e8e8e8',
-          borderBottom: 'none',
-          borderRadius: '6px 6px 0 0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
+        <div
+          style={{
+            padding: '12px 16px',
+            background: '#fafafa',
+            border: '1px solid #e8e8e8',
+            borderBottom: 'none',
+            borderRadius: '6px 6px 0 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <Space size={16}>
             <Space size={8}>
-              <Text type="secondary" style={{ fontSize: 13 }}>View:</Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                View:
+              </Text>
               <Segmented
                 value={viewMode}
                 onChange={(value) => {
@@ -557,7 +657,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                         </div>
                       </Tooltip>
                     ),
-                    value: 'split'
+                    value: 'split',
                   },
                   {
                     label: (
@@ -568,7 +668,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                         </div>
                       </Tooltip>
                     ),
-                    value: 'inline'
+                    value: 'inline',
                   },
                   {
                     label: (
@@ -579,153 +679,159 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
                         </div>
                       </Tooltip>
                     ),
-                    value: 'hunk'
-                  }
+                    value: 'hunk',
+                  },
                 ]}
               />
             </Space>
           </Space>
         </div>
 
-        <div style={{ display: 'flex', height: 600, border: '1px solid #e8e8e8', borderRadius: '0 0 6px 6px', overflow: 'hidden' }}>
-                  {/* File list on the left */}
-                  <div style={{ 
-                    width: 320, 
-                    borderRight: '2px solid #e8e8e8', 
-                    overflow: 'auto',
-                    padding: 16,
-                    background: '#fafafa'
-                  }}>
-                    <Text strong style={{ display: 'block', marginBottom: 12, fontSize: 14 }}>
-                      Changed Files ({projectDiff.files.length})
-                    </Text>
-                    <List
-                      size="small"
-                      dataSource={projectDiff.files}
-                      renderItem={(file) => {
-                        const fileName = file.path.split('/').pop() || file.path
-                        const filePath = file.path.split('/').slice(0, -1).join('/')
-                        
-                        return (
-                          <List.Item
-                            style={{
-                              cursor: 'pointer',
-                              padding: '10px 12px',
-                              background: selectedFile === file.path ? '#e6f7ff' : 'transparent',
-                              borderRadius: 6,
-                              marginBottom: 6,
-                              border: selectedFile === file.path ? '1px solid #91d5ff' : '1px solid transparent',
-                              transition: 'all 0.2s'
-                            }}
-                            onClick={() => setSelectedFile(file.path)}
-                            onMouseEnter={(e) => {
-                              if (selectedFile !== file.path) {
-                                e.currentTarget.style.background = '#f5f5f5'
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (selectedFile !== file.path) {
-                                e.currentTarget.style.background = 'transparent'
-                              }
-                            }}
-                          >
-                            <Space style={{ width: '100%' }} direction="vertical" size={4}>
-                              <Space>
-                                {getFileIcon(file.status)}
-                                <div style={{ flex: 1, overflow: 'hidden' }}>
-                                  <Text 
-                                    strong
-                                    ellipsis 
-                                    style={{ fontSize: 13, display: 'block' }}
-                                    title={file.path}
-                                  >
-                                    {fileName}
-                                  </Text>
-                                  {filePath && (
-                                    <Text 
-                                      type="secondary" 
-                                      ellipsis 
-                                      style={{ fontSize: 11, display: 'block' }}
-                                      title={filePath}
-                                    >
-                                      {filePath}
-                                    </Text>
-                                  )}
-                                </div>
-                              </Space>
-                              <Space size={6}>
-                                {getStatusTag(file.status)}
-                                {file.source === 'working' && (
-                                  <Tag color="orange" style={{ fontSize: 10, padding: '1px 6px', margin: 0 }}>
-                                    Unstaged
-                                  </Tag>
-                                )}
-                              </Space>
-                            </Space>
-                          </List.Item>
-                        )
-                      }}
-                    />
-                  </div>
+        <div
+          style={{
+            display: 'flex',
+            height: 600,
+            border: '1px solid #e8e8e8',
+            borderRadius: '0 0 6px 6px',
+            overflow: 'hidden',
+          }}
+        >
+          {/* File list on the left */}
+          <div
+            style={{
+              width: 320,
+              borderRight: '2px solid #e8e8e8',
+              overflow: 'auto',
+              padding: 16,
+              background: '#fafafa',
+            }}
+          >
+            <Text strong style={{ display: 'block', marginBottom: 12, fontSize: 14 }}>
+              Changed Files ({projectDiff.files.length})
+            </Text>
+            <List
+              size="small"
+              dataSource={projectDiff.files}
+              renderItem={(file) => {
+                const fileName = file.path.split('/').pop() || file.path
+                const filePath = file.path.split('/').slice(0, -1).join('/')
 
-                  {/* Diff view */}
-                  <div style={{ flex: 1, overflow: 'auto', padding: 16, background: '#fff' }}>
-                    {selectedFile ? (
-                      (() => {
-                        const fileChange = projectDiff.files.find(f => f.path === selectedFile)
-                        if (!fileChange) {
-                          return <Empty description="Select a file to view changes" />
-                        }
-                        const fileName = selectedFile.split('/').pop() || selectedFile
-                        const filePath = selectedFile.split('/').slice(0, -1).join('/')
-                        
-                        return (
-                          <>
-                            <div style={{ 
-                              marginBottom: 16, 
-                              padding: '12px 16px',
-                              background: '#fafafa',
-                              borderRadius: 4,
-                              border: '1px solid #e8e8e8'
-                            }}>
-                              <Space direction="vertical" size={2}>
-                                <Text strong style={{ fontSize: 14 }}>{fileName}</Text>
-                                {filePath && (
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {filePath}
-                                  </Text>
-                                )}
-                              </Space>
-                            </div>
-                            {viewMode === 'split' ? renderSideBySideDiff(fileChange) :
-                             viewMode === 'inline' ? renderInlineDiff(fileChange) :
-                             renderHunkDiff(fileChange)}
-                          </>
-                        )
-                      })()
-                    ) : (
-                      <Empty 
-                        description={
-                          <Space direction="vertical" size={4}>
-                            <Text type="secondary">Select a file from the list</Text>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              Click on any file to view its changes
+                return (
+                  <List.Item
+                    style={{
+                      cursor: 'pointer',
+                      padding: '10px 12px',
+                      background: selectedFile === file.path ? '#e6f7ff' : 'transparent',
+                      borderRadius: 6,
+                      marginBottom: 6,
+                      border: selectedFile === file.path ? '1px solid #91d5ff' : '1px solid transparent',
+                      transition: 'all 0.2s',
+                    }}
+                    onClick={() => setSelectedFile(file.path)}
+                    onMouseEnter={(e) => {
+                      if (selectedFile !== file.path) {
+                        e.currentTarget.style.background = '#f5f5f5'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedFile !== file.path) {
+                        e.currentTarget.style.background = 'transparent'
+                      }
+                    }}
+                  >
+                    <Space style={{ width: '100%' }} direction="vertical" size={4}>
+                      <Space>
+                        {getFileIcon(file.status)}
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <Text strong ellipsis style={{ fontSize: 13, display: 'block' }} title={file.path}>
+                            {fileName}
+                          </Text>
+                          {filePath && (
+                            <Text type="secondary" ellipsis style={{ fontSize: 11, display: 'block' }} title={filePath}>
+                              {filePath}
                             </Text>
-                          </Space>
-                        }
-                        style={{ marginTop: 100 }}
-                      />
-                    )}
-                  </div>
-                </div>
+                          )}
+                        </div>
+                      </Space>
+                      <Space size={6}>
+                        {getStatusTag(file.status)}
+                        {file.source === 'working' && (
+                          <Tag color="orange" style={{ fontSize: 10, padding: '1px 6px', margin: 0 }}>
+                            Unstaged
+                          </Tag>
+                        )}
+                      </Space>
+                    </Space>
+                  </List.Item>
+                )
+              }}
+            />
+          </div>
+
+          {/* Diff view */}
+          <div style={{ flex: 1, overflow: 'auto', padding: 16, background: '#fff' }}>
+            {selectedFile ? (
+              (() => {
+                const fileChange = projectDiff.files.find((f) => f.path === selectedFile)
+                if (!fileChange) {
+                  return <Empty description="Select a file to view changes" />
+                }
+                const fileName = selectedFile.split('/').pop() || selectedFile
+                const filePath = selectedFile.split('/').slice(0, -1).join('/')
+
+                return (
+                  <>
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        padding: '12px 16px',
+                        background: '#fafafa',
+                        borderRadius: 4,
+                        border: '1px solid #e8e8e8',
+                      }}
+                    >
+                      <Space direction="vertical" size={2}>
+                        <Text strong style={{ fontSize: 14 }}>
+                          {fileName}
+                        </Text>
+                        {filePath && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {filePath}
+                          </Text>
+                        )}
+                      </Space>
+                    </div>
+                    {viewMode === 'split'
+                      ? renderSideBySideDiff(fileChange)
+                      : viewMode === 'inline'
+                        ? renderInlineDiff(fileChange)
+                        : renderHunkDiff(fileChange)}
+                  </>
+                )
+              })()
+            ) : (
+              <Empty
+                description={
+                  <Space direction="vertical" size={4}>
+                    <Text type="secondary">Select a file from the list</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Click on any file to view its changes
+                    </Text>
+                  </Space>
+                }
+                style={{ marginTop: 100 }}
+              />
+            )}
+          </div>
+        </div>
       </div>
     )
   }
 
-  const tabItems: TabsProps['items'] = projectsWithWorktrees.map(project => {
+  const tabItems: TabsProps['items'] = projectsWithWorktrees.map((project) => {
     const projectDiff = projectDiffs[project.name]
     const isLoading = loading[project.name]
-    
+
     return {
       key: project.name,
       label: (
@@ -734,29 +840,17 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
           {isLoading ? (
             <Spin size="small" />
           ) : projectDiff && projectDiff.files.length > 0 ? (
-            <Badge 
-              count={projectDiff.files.length} 
-              showZero={false}
-              style={{ backgroundColor: '#1890ff' }}
-            />
+            <Badge count={projectDiff.files.length} showZero={false} style={{ backgroundColor: '#1890ff' }} />
           ) : null}
         </Space>
       ),
-      children: renderTabContent(project)
+      children: renderTabContent(project),
     }
   })
 
   return (
-    <Card
-      title="Changes"
-      style={{ marginBottom: 16 }}
-    >
-      <Tabs 
-        activeKey={activeProject} 
-        onChange={setActiveProject}
-        type="card"
-        items={tabItems}
-      />
+    <Card title="Changes" style={{ marginBottom: 16 }}>
+      <Tabs activeKey={activeProject} onChange={setActiveProject} type="card" items={tabItems} />
     </Card>
   )
 }
@@ -768,18 +862,17 @@ export default React.memo(ChangesViewer, (prevProps, nextProps) => {
   if (prevProps.featureName !== nextProps.featureName) {
     return false // Feature changed, need to re-render
   }
-  
+
   // Check if projects array has same length
   if (prevProps.projects.length !== nextProps.projects.length) {
     return false // Number of projects changed, need to re-render
   }
-  
+
   // Deep compare projects array - check if contents are the same
   const projectsEqual = prevProps.projects.every((prevProj, index) => {
     const nextProj = nextProps.projects[index]
-    return prevProj.name === nextProj.name && 
-           prevProj.worktreePath === nextProj.worktreePath
+    return prevProj.name === nextProj.name && prevProj.worktreePath === nextProj.worktreePath
   })
-  
+
   return projectsEqual // true = don't re-render, false = re-render
 })

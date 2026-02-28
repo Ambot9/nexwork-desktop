@@ -1,8 +1,9 @@
 import { app, BrowserWindow } from 'electron'
+import { log } from './log'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import os from 'os'
+import _os from 'os'
 import { registerIpcHandlers } from './ipc-handlers'
 import { createTray, destroyTray } from './tray'
 
@@ -31,9 +32,7 @@ export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 export const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
-  ? path.join(process.env.APP_ROOT, 'public')
-  : RENDERER_DIST
+process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
 let autoCleanupInterval: NodeJS.Timeout | null = null
@@ -45,97 +44,97 @@ function startAutoCleanupService() {
     try {
       // Import the current workspace from ipc-handlers
       // This will be empty until user sets it
-      console.log('🔍 Checking for expired features...')
-      
+      log.info('🔍 Checking for expired features...')
+
       // Get workspace from the global in ipc-handlers
       // We need to import it dynamically to get the current value
       const ipcHandlers = require('./ipc-handlers')
       const workspaceRoot = ipcHandlers.currentWorkspaceRoot
-      
+
       if (!workspaceRoot) {
-        console.log('⏭️ No workspace set yet, skipping cleanup')
+        log.info('⏭️ No workspace set yet, skipping cleanup')
         return
       }
-      
+
       const configManager = new ConfigManager(workspaceRoot)
       const features = configManager.getAllFeatures()
       const now = new Date()
-      
+
       for (const feature of features) {
         if (feature.expiresAt) {
           const expiresDate = new Date(feature.expiresAt)
           const isExpired = expiresDate < now
-          
+
           if (isExpired) {
             const daysExpired = Math.floor((now.getTime() - expiresDate.getTime()) / (1000 * 60 * 60 * 24))
-            console.log(`🗑️ Found expired feature: ${feature.name} (expired ${daysExpired} days ago)`)
-            
+            log.info(`🗑️ Found expired feature: ${feature.name} (expired ${daysExpired} days ago)`)
+
             try {
               // Cleanup the expired feature
               for (const project of feature.projects) {
                 try {
                   const projectPath = configManager.getProjectPath(project.name)
                   const worktreeManager = new WorktreeManager(projectPath)
-                  
+
                   // Remove worktree
                   if (project.worktreePath && fs.existsSync(project.worktreePath)) {
-                    console.log(`  📁 Removing worktree: ${project.worktreePath}`)
+                    log.info(`  📁 Removing worktree: ${project.worktreePath}`)
                     await worktreeManager.removeWorktree(project.worktreePath)
                   }
-                  
+
                   // Delete branch
                   if (project.branch) {
-                    console.log(`  🌿 Deleting branch: ${project.branch}`)
+                    log.info(`  🌿 Deleting branch: ${project.branch}`)
                     await worktreeManager.deleteFeatureBranch(project.branch)
                   }
                 } catch (error: any) {
-                  console.error(`  ❌ Failed to cleanup ${project.name}:`, error.message)
+                  log.error(`  ❌ Failed to cleanup ${project.name}:`, error.message)
                 }
               }
-              
+
               // Delete feature folder
               try {
                 const featureDate = new Date(feature.createdAt).toISOString().split('T')[0]
                 const featureFolderName = `${featureDate}-${feature.name.replace(/[^a-zA-Z0-9]/g, '-')}`
                 const featureFolder = path.join(workspaceRoot, 'features', featureFolderName)
-                
+
                 if (fs.existsSync(featureFolder)) {
-                  console.log(`  🗂️ Deleting feature folder: ${featureFolder}`)
+                  log.info(`  🗂️ Deleting feature folder: ${featureFolder}`)
                   fs.rmSync(featureFolder, { recursive: true, force: true })
                 }
               } catch (error: any) {
-                console.error(`  ❌ Failed to delete feature folder:`, error.message)
+                log.error(`  ❌ Failed to delete feature folder:`, error.message)
               }
-              
+
               // Remove from config
               configManager.deleteFeature(feature.name)
-              
-              console.log(`✅ Auto-cleaned expired feature: ${feature.name}`)
+
+              log.info(`✅ Auto-cleaned expired feature: ${feature.name}`)
             } catch (error: any) {
-              console.error(`❌ Failed to auto-cleanup ${feature.name}:`, error.message)
+              log.error(`❌ Failed to auto-cleanup ${feature.name}:`, error.message)
             }
           }
         }
       }
     } catch (error: any) {
-      console.error('❌ Error in auto-cleanup service:', error.message)
+      log.error('❌ Error in auto-cleanup service:', error.message)
     }
   }
-  
+
   // Run first check after 60 seconds to avoid slowing startup
   setTimeout(checkExpiredFeatures, 60000) // Wait 60 seconds after startup
-  
+
   // Then check every hour
   autoCleanupInterval = setInterval(checkExpiredFeatures, 60 * 60 * 1000)
-  
-  console.log('✅ Auto-cleanup service started (first check in 60s, then hourly)')
+
+  log.info('✅ Auto-cleanup service started (first check in 60s, then hourly)')
 }
 
 function stopAutoCleanupService() {
   if (autoCleanupInterval) {
     clearInterval(autoCleanupInterval)
     autoCleanupInterval = null
-    console.log('🛑 Auto-cleanup service stopped')
+    log.info('🛑 Auto-cleanup service stopped')
   }
 }
 
@@ -168,14 +167,14 @@ function createWindow() {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: https:; " +
-          "font-src 'self' data:; " +
-          "connect-src 'self'; " +
-          "media-src 'self' blob:;"
-        ]
-      }
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "img-src 'self' data: https:; " +
+            "font-src 'self' data:; " +
+            "connect-src 'self'; " +
+            "media-src 'self' blob:;",
+        ],
+      },
     })
   })
 
@@ -194,22 +193,22 @@ function createWindow() {
 
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
-    console.log('✅ Renderer loaded successfully')
+    log.info('✅ Renderer loaded successfully')
     win?.webContents.send('main-process-message', new Date().toLocaleString())
   })
 
   // Log any load errors
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('❌ Failed to load renderer:', errorCode, errorDescription)
+    log.error('❌ Failed to load renderer:', errorCode, errorDescription)
   })
 
   if (VITE_DEV_SERVER_URL) {
-    console.log('Loading dev server:', VITE_DEV_SERVER_URL)
+    log.info('Loading dev server:', VITE_DEV_SERVER_URL)
     win.loadURL(VITE_DEV_SERVER_URL)
     // Open DevTools in development
     win.webContents.openDevTools()
   } else {
-    console.log('Loading production build from:', path.join(RENDERER_DIST, 'index.html'))
+    log.info('Loading production build from:', path.join(RENDERER_DIST, 'index.html'))
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
 }
@@ -237,32 +236,40 @@ app.whenReady().then(async () => {
   try {
     const { storage } = await import('./storage')
     const lastWorkspace = storage.getSetting('lastWorkspace')
-    
+
     if (lastWorkspace) {
-      console.log('🔄 Restoring workspace from settings:', lastWorkspace)
+      log.info('🔄 Restoring workspace from settings:', lastWorkspace)
       // Import and set the workspace
       const ipcHandlers = await import('./ipc-handlers')
       await ipcHandlers.setWorkspaceOnStartup(lastWorkspace)
     }
   } catch (error) {
-    console.error('❌ Failed to restore workspace:', error)
+    log.error('❌ Failed to restore workspace:', error)
   }
-  
+
   registerIpcHandlers()
   createWindow()
-  
+
   // Create system tray
   if (win) {
     createTray(win)
   }
-  
+
   // Start auto-cleanup service for expired features
   startAutoCleanupService()
 })
 
 // Set quitting flag before quit
-app.on('before-quit', () => {
-  (app as any).isQuitting = true
+app.on('before-quit', async () => {
+  ;(app as any).isQuitting = true
   stopAutoCleanupService()
   destroyTray()
+
+  // Close database to prevent corruption
+  try {
+    const { storage } = await import('./storage')
+    storage.close()
+  } catch (error) {
+    log.error('Failed to close database:', error)
+  }
 })

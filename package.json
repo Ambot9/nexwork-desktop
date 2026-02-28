@@ -15,7 +15,23 @@
     "build:all": "tsc && vite build && electron-builder -mwl",
     "dist": "npm run build",
     "preview": "vite preview",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "eslint src electron --ext .ts,.tsx --max-warnings 0",
+    "lint:fix": "eslint src electron --ext .ts,.tsx --fix",
+    "format": "prettier --write 'src/**/*.{ts,tsx}' 'electron/**/*.ts'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -29,14 +45,25 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
     "@vitejs/plugin-react": "^4.2.1",
     "antd": "^5.12.8",
     "electron": "^28.1.4",
     "electron-builder": "^24.9.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "husky": "^9.1.7",
+    "jsdom": "^28.1.0",
+    "lint-staged": "^16.2.7",
     "lucide-react": "^0.312.0",
+    "prettier": "^3.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.2",
@@ -44,6 +71,7 @@
     "vite": "^5.0.11",
     "vite-plugin-electron": "^0.28.2",
     "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^4.0.18",
     "zustand": "^4.5.0"
   },
   "build": {

@@ -42,7 +42,7 @@ export function validateWorkspacePath(workspacePath: string): boolean {
       '/bin',
       '/sbin',
       '/usr/bin',
-      '/usr/sbin'
+      '/usr/sbin',
     ]
 
     for (const forbidden of forbiddenPaths) {
@@ -72,7 +72,7 @@ export function sanitizeFeatureName(featureName: string): string {
   const sanitized = featureName
     .replace(/[;&|`$(){}[\]<>]/g, '') // Command injection chars
     .replace(/\.\./g, '') // Directory traversal
-    .replace(/[\/\\]/g, '-') // Path separators
+    .replace(/[/\\]/g, '-') // Path separators
     .replace(/\s+/g, '-') // Convert spaces to dashes
     .replace(/-+/g, '-') // Remove consecutive dashes
     .replace(/^-|-$/g, '') // Remove leading/trailing dashes
@@ -99,7 +99,7 @@ export function validateBranchName(branchName: string): boolean {
   }
 
   // Git branch name rules
-  const validPattern = /^[a-zA-Z0-9._\/-]+$/
+  const validPattern = /^[a-zA-Z0-9._/-]+$/
   if (!validPattern.test(branchName)) {
     console.error('Security: Invalid characters in branch name')
     return false
@@ -107,13 +107,13 @@ export function validateBranchName(branchName: string): boolean {
 
   // Forbidden patterns
   const forbidden = [
-    /^\./,           // Cannot start with .
-    /\.\.$/,         // Cannot end with ..
-    /\.lock$/,       // Cannot end with .lock
-    /@\{/,          // Cannot contain @{
-    /\.\./,         // Cannot contain ..
-    /\/\//,         // Cannot contain //
-    /^\/|\/$/       // Cannot start or end with /
+    /^\./, // Cannot start with .
+    /\.\.$/, // Cannot end with ..
+    /\.lock$/, // Cannot end with .lock
+    /@\{/, // Cannot contain @{
+    /\.\./, // Cannot contain ..
+    /\/\//, // Cannot contain //
+    /^\/|\/$/, // Cannot start or end with /
   ]
 
   for (const pattern of forbidden) {
@@ -204,7 +204,7 @@ class RateLimiter {
     const requests = this.requests.get(key) || []
 
     // Remove old requests outside the time window
-    const validRequests = requests.filter(time => now - time < this.windowMs)
+    const validRequests = requests.filter((time) => now - time < this.windowMs)
 
     if (validRequests.length >= this.maxRequests) {
       console.warn(`Security: Rate limit exceeded for ${key}`)
@@ -218,7 +218,7 @@ class RateLimiter {
     if (this.requests.size > 1000) {
       const cutoff = now - this.windowMs
       for (const [k, times] of this.requests.entries()) {
-        if (times.every(t => t < cutoff)) {
+        if (times.every((t) => t < cutoff)) {
           this.requests.delete(k)
         }
       }

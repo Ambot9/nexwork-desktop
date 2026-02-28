@@ -26,8 +26,8 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
       id: '1',
       type: 'system',
       content: `🤖 AI Terminal ready for ${feature.name}\n💡 Type @ai help to see AI commands, or run regular git/shell commands`,
-      timestamp: new Date()
-    }
+      timestamp: new Date(),
+    },
   ])
   const [input, setInput] = useState('')
   const [isExpanded, setIsExpanded] = useState(true)
@@ -48,63 +48,63 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
     const initAI = async () => {
       const service = await createAIService()
       setAiService(service)
-      
+
       if (service) {
         addMessage({
           type: 'system',
-          content: '✨ AI Assistant ready! Use @ai commands for help.'
+          content: '✨ AI Assistant ready! Use @ai commands for help.',
         })
       }
     }
-    
+
     initAI()
   }, [])
 
   const addMessage = (msg: Omit<TerminalMessage, 'id' | 'timestamp'>) => {
-    setMessages(prev => [
+    setMessages((prev) => [
       ...prev,
       {
         ...msg,
         id: Date.now().toString(),
-        timestamp: new Date()
-      }
+        timestamp: new Date(),
+      },
     ])
   }
 
   const executeCommand = async (command: string, project?: string) => {
     try {
       setIsExecuting(true)
-      
+
       // Get project path
       const config = await window.nexworkAPI.config.load()
-      const projectPath = project 
+      const projectPath = project
         ? `${workspaceRoot}/${config.projects.find((p: any) => p.name === project)?.path}`
         : workspaceRoot
 
-      addMessage({ 
-        type: 'command', 
-        content: `$ ${command}${project ? ` (in ${project})` : ''}` 
+      addMessage({
+        type: 'command',
+        content: `$ ${command}${project ? ` (in ${project})` : ''}`,
       })
 
       const result = await window.nexworkAPI.runCommand(command, projectPath)
 
       if (result.success) {
-        addMessage({ 
-          type: 'output', 
+        addMessage({
+          type: 'output',
           content: result.output || 'Command completed successfully',
-          project 
+          project,
         })
       } else {
-        addMessage({ 
-          type: 'error', 
+        addMessage({
+          type: 'error',
           content: result.error || 'Command failed',
-          project 
+          project,
         })
       }
     } catch (error: any) {
-      addMessage({ 
-        type: 'error', 
-        content: `Error: ${error.message}` 
+      addMessage({
+        type: 'error',
+        content: `Error: ${error.message}`,
       })
     } finally {
       setIsExecuting(false)
@@ -113,37 +113,37 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
 
   const handleAICommand = async (query: string) => {
     if (!aiService) {
-      addMessage({ 
-        type: 'error', 
-        content: '❌ AI is not enabled. Configure AI in Settings to use @ai commands.' 
+      addMessage({
+        type: 'error',
+        content: '❌ AI is not enabled. Configure AI in Settings to use @ai commands.',
       })
       return
     }
 
-    addMessage({ 
-      type: 'command', 
-      content: `@ai ${query}` 
+    addMessage({
+      type: 'command',
+      content: `@ai ${query}`,
     })
 
     // Add loading indicator
     const loadingId = Date.now().toString()
-    setMessages(prev => [
+    setMessages((prev) => [
       ...prev,
       {
         id: loadingId,
         type: 'system',
         content: '🤔 AI is thinking...',
-        timestamp: new Date()
-      }
+        timestamp: new Date(),
+      },
     ])
 
     try {
       setIsExecuting(true)
-      
+
       // Build AI context
       const context: AIContext = {
         feature,
-        workspaceRoot
+        workspaceRoot,
       }
 
       // Gather git diff if needed for review/commit commands
@@ -170,14 +170,14 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
         }
       }
 
-      let response: string
+      let response: string | { content: string }
 
       // Route to specific AI command handlers
       if (query.startsWith('review')) {
         if (!context.gitDiff || context.gitDiff.trim() === '') {
           addMessage({
             type: 'system',
-            content: '⚠️ No uncommitted changes to review. Make some changes first!'
+            content: '⚠️ No uncommitted changes to review. Make some changes first!',
           })
           return
         }
@@ -186,7 +186,7 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
         if (!context.gitDiff || context.gitDiff.trim() === '') {
           addMessage({
             type: 'system',
-            content: '⚠️ No uncommitted changes. Make some changes first!'
+            content: '⚠️ No uncommitted changes. Make some changes first!',
           })
           return
         }
@@ -196,7 +196,7 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
         if (!errorText) {
           addMessage({
             type: 'system',
-            content: '⚠️ Please provide an error message to explain. Usage: @ai explain [error message]'
+            content: '⚠️ Please provide an error message to explain. Usage: @ai explain [error message]',
           })
           return
         }
@@ -210,7 +210,7 @@ export function AITerminal({ feature, workspaceRoot }: AITerminalProps) {
         if (!issue) {
           addMessage({
             type: 'system',
-            content: '⚠️ Please describe the issue. Usage: @ai debug [issue description]'
+            content: '⚠️ Please describe the issue. Usage: @ai debug [issue description]',
           })
           return
         }
@@ -233,19 +233,19 @@ All commands understand your feature context automatically!`
       }
 
       // Remove loading indicator
-      setMessages(prev => prev.filter(msg => msg.id !== loadingId))
-      
-      addMessage({ 
-        type: 'ai', 
-        content: response
+      setMessages((prev) => prev.filter((msg) => msg.id !== loadingId))
+
+      addMessage({
+        type: 'ai',
+        content: typeof response === 'string' ? response : response.content,
       })
     } catch (error: any) {
       // Remove loading indicator
-      setMessages(prev => prev.filter(msg => msg.id !== loadingId))
-      
-      addMessage({ 
-        type: 'error', 
-        content: `❌ AI Error: ${error.message}` 
+      setMessages((prev) => prev.filter((msg) => msg.id !== loadingId))
+
+      addMessage({
+        type: 'error',
+        content: `❌ AI Error: ${error.message}`,
       })
       message.error(`AI request failed: ${error.message}`)
     } finally {
@@ -269,7 +269,7 @@ All commands understand your feature context automatically!`
     if (cmd.startsWith('@all ')) {
       const actualCmd = cmd.substring(5)
       addMessage({ type: 'system', content: `Running on all projects: ${actualCmd}` })
-      
+
       for (const project of feature.projects) {
         await executeCommand(actualCmd, project.name)
       }
@@ -315,11 +315,7 @@ All commands understand your feature context automatically!`
         <Space>
           <Terminal size={18} />
           <span>AI Terminal</span>
-          {aiService ? (
-            <Tag color="green">✨ AI Enabled</Tag>
-          ) : (
-            <Tag color="default">AI Disabled</Tag>
-          )}
+          {aiService ? <Tag color="green">✨ AI Enabled</Tag> : <Tag color="default">AI Disabled</Tag>}
         </Space>
       }
       extra={
@@ -327,8 +323,8 @@ All commands understand your feature context automatically!`
           <Button size="small" icon={<Trash2 size={14} />} onClick={handleClear}>
             Clear
           </Button>
-          <Button 
-            size="small" 
+          <Button
+            size="small"
             icon={isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             onClick={() => setIsExpanded(!isExpanded)}
           >
@@ -342,7 +338,8 @@ All commands understand your feature context automatically!`
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           {/* Help Text */}
           <Text type="secondary" style={{ fontSize: 12 }}>
-            💡 Commands: <Text code>git status</Text> | <Text code>@ai help</Text> | <Text code>@ai review</Text> | <Text code>@all git pull</Text> | <Text code>@coloris npm test</Text>
+            💡 Commands: <Text code>git status</Text> | <Text code>@ai help</Text> | <Text code>@ai review</Text> |{' '}
+            <Text code>@all git pull</Text> | <Text code>@coloris npm test</Text>
           </Text>
           {aiService && (
             <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: -8 }}>
@@ -359,7 +356,7 @@ All commands understand your feature context automatically!`
               padding: 12,
               borderRadius: 4,
               fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-              fontSize: 12
+              fontSize: 12,
             }}
           >
             {messages.map((msg) => (
@@ -367,14 +364,10 @@ All commands understand your feature context automatically!`
                 {msg.content.includes('AI is thinking') ? (
                   <Space>
                     <Spin size="small" />
-                    <Text style={{ color: 'inherit', fontFamily: 'inherit' }}>
-                      {msg.content}
-                    </Text>
+                    <Text style={{ color: 'inherit', fontFamily: 'inherit' }}>{msg.content}</Text>
                   </Space>
                 ) : (
-                  <Text style={{ color: 'inherit', fontFamily: 'inherit', whiteSpace: 'pre-wrap' }}>
-                    {msg.content}
-                  </Text>
+                  <Text style={{ color: 'inherit', fontFamily: 'inherit', whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
                 )}
                 {msg.project && (
                   <Tag color="blue" style={{ marginLeft: 8, fontSize: 10 }}>
@@ -397,13 +390,7 @@ All commands understand your feature context automatically!`
               disabled={isExecuting}
               size="large"
             />
-            <Button
-              type="primary"
-              icon={<Send size={16} />}
-              onClick={handleSubmit}
-              loading={isExecuting}
-              size="large"
-            >
+            <Button type="primary" icon={<Send size={16} />} onClick={handleSubmit} loading={isExecuting} size="large">
               Run
             </Button>
           </Space.Compact>

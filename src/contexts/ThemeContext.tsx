@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { ConfigProvider, theme as antdTheme } from 'antd'
-
-type ThemeMode = 'system' | 'light' | 'dark' | 'ember' | 'monokai' | 'oneDarkPro'
+import { darkThemes } from '../types/theme'
+import type { ThemeMode } from '../types/theme'
 
 interface ThemeContextType {
   theme: ThemeMode
@@ -23,62 +23,58 @@ interface ThemeProviderProps {
   children: ReactNode
 }
 
-const darkThemes: ThemeMode[] = ['dark', 'ember', 'monokai', 'oneDarkPro']
-
 const getThemeColors = (themeMode: ThemeMode, systemIsDark: boolean) => {
-  // Determine if we should use dark mode
-  const isDark = themeMode === 'system' 
-    ? systemIsDark 
-    : darkThemes.includes(themeMode)
+  const isDark = themeMode === 'system' ? systemIsDark : darkThemes.includes(themeMode)
 
-  // Base colors for each theme
   const themeColors: Record<ThemeMode, any> = {
-    system: isDark ? {
-      colorBgContainer: '#1f1f1f',
-      colorBgElevated: '#2a2a2a',
-      colorBgLayout: '#141414',
-      colorText: '#e8e8e8',
-      colorTextSecondary: '#a0a0a0',
-      colorBorder: '#3a3a3a'
-    } : {
-      colorBgContainer: '#ffffff',
-      colorBgElevated: '#fafafa',
-      colorBgLayout: '#f5f5f5',
-      colorText: '#000000',
-      colorTextSecondary: '#666666',
-      colorBorder: '#d9d9d9'
-    },
+    system: isDark
+      ? {
+          colorBgContainer: '#1a1a1a',
+          colorBgElevated: '#242424',
+          colorBgLayout: '#111111',
+          colorText: '#e5e5e5',
+          colorTextSecondary: '#a0a0a0',
+          colorBorder: '#2e2e2e',
+        }
+      : {
+          colorBgContainer: '#ffffff',
+          colorBgElevated: '#fafafa',
+          colorBgLayout: '#f7f7f8',
+          colorText: '#111111',
+          colorTextSecondary: '#6b6b6b',
+          colorBorder: '#e5e5e5',
+        },
     light: {
       colorBgContainer: '#ffffff',
       colorBgElevated: '#fafafa',
-      colorBgLayout: '#f5f5f5',
-      colorText: '#000000',
-      colorTextSecondary: '#666666',
-      colorBorder: '#d9d9d9'
+      colorBgLayout: '#f7f7f8',
+      colorText: '#111111',
+      colorTextSecondary: '#6b6b6b',
+      colorBorder: '#e5e5e5',
     },
     dark: {
-      colorBgContainer: '#1f1f1f',
-      colorBgElevated: '#2a2a2a',
-      colorBgLayout: '#141414',
-      colorText: '#e8e8e8',
+      colorBgContainer: '#1a1a1a',
+      colorBgElevated: '#242424',
+      colorBgLayout: '#111111',
+      colorText: '#e5e5e5',
       colorTextSecondary: '#a0a0a0',
-      colorBorder: '#3a3a3a'
+      colorBorder: '#2e2e2e',
     },
     ember: {
       colorBgContainer: '#16191f',
-      colorBgElevated: '#1e2229',
-      colorBgLayout: '#0d0f13',
-      colorText: '#e8e8e8',
-      colorTextSecondary: '#a0a0a0',
-      colorBorder: '#2a2f38'
+      colorBgElevated: '#1c2027',
+      colorBgLayout: '#0e1015',
+      colorText: '#e5e5e5',
+      colorTextSecondary: '#8b8fa0',
+      colorBorder: '#252a33',
     },
     monokai: {
       colorBgContainer: '#272822',
-      colorBgElevated: '#2f3129',
+      colorBgElevated: '#2d2e27',
       colorBgLayout: '#1e1f1c',
       colorText: '#f8f8f2',
       colorTextSecondary: '#a8a897',
-      colorBorder: '#3e3d32'
+      colorBorder: '#3e3d32',
     },
     oneDarkPro: {
       colorBgContainer: '#282c34',
@@ -86,36 +82,25 @@ const getThemeColors = (themeMode: ThemeMode, systemIsDark: boolean) => {
       colorBgLayout: '#21252b',
       colorText: '#abb2bf',
       colorTextSecondary: '#5c6370',
-      colorBorder: '#3e4451'
-    }
+      colorBorder: '#3e4451',
+    },
   }
 
   return themeColors[themeMode]
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<ThemeMode>('light')
-  const [systemIsDark, setSystemIsDark] = useState(false)
+  const [theme, setThemeState] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('nexworkTheme') as ThemeMode
+    return saved || 'light'
+  })
+  const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
 
-  // Check system preference
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    setSystemIsDark(mediaQuery.matches)
-
-    const handler = (e: MediaQueryListEvent) => {
-      setSystemIsDark(e.matches)
-    }
-
+    const handler = (e: MediaQueryListEvent) => setSystemIsDark(e.matches)
     mediaQuery.addEventListener('change', handler)
     return () => mediaQuery.removeEventListener('change', handler)
-  }, [])
-
-  // Load saved theme
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('nexworkTheme') as ThemeMode
-    if (savedTheme) {
-      setThemeState(savedTheme)
-    }
   }, [])
 
   const setTheme = (newTheme: ThemeMode) => {
@@ -123,10 +108,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     localStorage.setItem('nexworkTheme', newTheme)
   }
 
-  const isDark = theme === 'system' 
-    ? systemIsDark 
-    : darkThemes.includes(theme)
-
+  const isDark = theme === 'system' ? systemIsDark : darkThemes.includes(theme)
   const themeColors = getThemeColors(theme, systemIsDark)
 
   return (
@@ -135,24 +117,37 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         theme={{
           algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: '#1890ff',
-            borderRadius: 6,
-            ...themeColors
+            colorPrimary: '#4f6ef7',
+            borderRadius: 8,
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+            ...themeColors,
           },
           components: {
             Layout: {
               headerBg: themeColors.colorBgContainer,
               siderBg: themeColors.colorBgContainer,
-              bodyBg: themeColors.colorBgLayout
+              bodyBg: themeColors.colorBgLayout,
             },
             Card: {
-              colorBgContainer: themeColors.colorBgContainer
+              colorBgContainer: themeColors.colorBgContainer,
+              borderRadiusLG: 12,
             },
             Menu: {
               colorBgContainer: themeColors.colorBgContainer,
-              itemBg: themeColors.colorBgContainer
-            }
-          }
+              itemBg: themeColors.colorBgContainer,
+              itemBorderRadius: 8,
+              itemMarginInline: 8,
+            },
+            Button: {
+              borderRadius: 8,
+            },
+            Input: {
+              borderRadius: 8,
+            },
+            Select: {
+              borderRadius: 8,
+            },
+          },
         }}
       >
         {children}

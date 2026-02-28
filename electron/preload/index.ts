@@ -1,20 +1,23 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 // --------- Expose some API to the Renderer process ---------
+const listenerMap = new Map<string, (...args: any[]) => void>()
+
 contextBridge.exposeInMainWorld('nexworkAPI', {
   // System
   ping: () => ipcRenderer.invoke('ping'),
   selectFolder: () => ipcRenderer.invoke('system:selectFolder'),
   runCommand: (command: string, workingDir?: string) => ipcRenderer.invoke('system:runCommand', command, workingDir),
-  openInTerminal: (folderPath: string, terminalApp?: string) => ipcRenderer.invoke('system:openInTerminal', folderPath, terminalApp),
+  openInTerminal: (folderPath: string, terminalApp?: string) =>
+    ipcRenderer.invoke('system:openInTerminal', folderPath, terminalApp),
   openInVSCode: (folderPath: string) => ipcRenderer.invoke('system:openInVSCode', folderPath),
   openInIDE: (folderPath: string, ide: string) => ipcRenderer.invoke('system:openInIDE', folderPath, ide),
-  
+
   system: {
     setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('system:setAutoLaunch', enabled),
     getAutoLaunch: () => ipcRenderer.invoke('system:getAutoLaunch'),
   },
-  
+
   // Features
   features: {
     getAll: () => ipcRenderer.invoke('features:getAll'),
@@ -28,11 +31,11 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
 
   // Projects
   projects: {
-    updateStatus: (featureName: string, projectName: string, status: string) => 
+    updateStatus: (featureName: string, projectName: string, status: string) =>
       ipcRenderer.invoke('projects:updateStatus', featureName, projectName, status),
-    createWorktree: (featureName: string, projectName: string) => 
+    createWorktree: (featureName: string, projectName: string) =>
       ipcRenderer.invoke('projects:createWorktree', featureName, projectName),
-    removeWorktree: (featureName: string, projectName: string) => 
+    removeWorktree: (featureName: string, projectName: string) =>
       ipcRenderer.invoke('projects:removeWorktree', featureName, projectName),
   },
 
@@ -55,12 +58,13 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
   // Stats
   stats: {
     getFeatureStats: (featureName: string) => ipcRenderer.invoke('stats:getFeatureStats', featureName),
-    getGitStats: (featureName: string, projectName: string) => 
+    getGitStats: (featureName: string, projectName: string) =>
       ipcRenderer.invoke('stats:getGitStats', featureName, projectName),
     getProjectDiff: (featureName: string, projectName: string, ignoreWhitespace?: boolean) =>
       ipcRenderer.invoke('stats:getProjectDiff', featureName, projectName, ignoreWhitespace),
-    syncWorktrees: (featureName: string) =>
-      ipcRenderer.invoke('stats:syncWorktrees', featureName),
+    getProjectCommits: (featureName: string, projectName: string) =>
+      ipcRenderer.invoke('stats:getProjectCommits', featureName, projectName),
+    syncWorktrees: (featureName: string) => ipcRenderer.invoke('stats:syncWorktrees', featureName),
   },
 
   // Settings & Storage (NEW)
@@ -90,14 +94,10 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
 
   // Terminal
   terminal: {
-    create: (options: { cols: number, rows: number, cwd: string }) => 
-      ipcRenderer.invoke('terminal:create', options),
-    write: (pid: number, data: string) => 
-      ipcRenderer.invoke('terminal:write', pid, data),
-    resize: (pid: number, cols: number, rows: number) => 
-      ipcRenderer.invoke('terminal:resize', pid, cols, rows),
-    kill: (pid: number) => 
-      ipcRenderer.invoke('terminal:kill', pid),
+    create: (options: { cols: number; rows: number; cwd: string }) => ipcRenderer.invoke('terminal:create', options),
+    write: (pid: number, data: string) => ipcRenderer.invoke('terminal:write', pid, data),
+    resize: (pid: number, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', pid, cols, rows),
+    kill: (pid: number) => ipcRenderer.invoke('terminal:kill', pid),
     onData: (pid: number, callback: (data: string) => void) => {
       const listener = (_: any, termPid: number, data: string) => {
         if (termPid === pid) callback(data)
@@ -114,13 +114,32 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
     },
   },
 
+  // Git
+  git: {
+    getConflictFiles: (workingDir: string) => ipcRenderer.invoke('git:getConflictFiles', workingDir),
+  },
+
+  // Pull Requests
+  pullRequests: {
+    checkGhCli: () => ipcRenderer.invoke('pr:checkGhCli'),
+    create: (projects: any[], options: { title: string; body: string; draft: boolean }) =>
+      ipcRenderer.invoke('pr:create', projects, options),
+  },
+
   // Events
   on: (channel: string, callback: (...args: any[]) => void) => {
-    ipcRenderer.on(channel, (_, ...args) => callback(...args))
+    const wrapper = (_: any, ...args: any[]) => callback(...args)
+    listenerMap.set(`${channel}::${callback}`, wrapper)
+    ipcRenderer.on(channel, wrapper)
   },
-  
+
   off: (channel: string, callback: (...args: any[]) => void) => {
-    ipcRenderer.removeListener(channel, callback)
+    const key = `${channel}::${callback}`
+    const wrapper = listenerMap.get(key)
+    if (wrapper) {
+      ipcRenderer.removeListener(channel, wrapper)
+      listenerMap.delete(key)
+    }
   },
 })
 
@@ -130,20 +149,58 @@ declare global {
     nexworkAPI: {
       ping: () => Promise<string>
       selectFolder: () => Promise<string | null>
-      runCommand: (command: string, workingDir?: string) => Promise<{success: boolean, output: string, error: string | null}>
-      openInTerminal: (folderPath: string) => Promise<{success: boolean, error?: string}>
-      openInVSCode: (folderPath: string) => Promise<{success: boolean, error?: string}>
-      openInIDE: (folderPath: string, ide: string) => Promise<{success: boolean, error?: string}>
+      runCommand: (
+        command: string,
+        workingDir?: string,
+      ) => Promise<{ success: boolean; output: string; error: string | null }>
+      openInTerminal: (folderPath: string, terminalApp?: string) => Promise<{ success: boolean; error?: string }>
+      openInVSCode: (folderPath: string) => Promise<{ success: boolean; error?: string }>
+      openInIDE: (folderPath: string, ide: string) => Promise<{ success: boolean; error?: string }>
+      system: {
+        setAutoLaunch: (enabled: boolean) => Promise<any>
+        getAutoLaunch: () => Promise<any>
+      }
       features: any
       projects: any
       templates: any
       config: any
       stats: any
+      settings: {
+        get: (key: string) => Promise<{ success: boolean; value?: any }>
+        set: (key: string, value: any) => Promise<any>
+        getAll: () => Promise<any>
+      }
+      featureHistory: {
+        save: (feature: any) => Promise<any>
+        getAll: (status?: string) => Promise<any>
+        updateStatus: (id: string, status: string) => Promise<any>
+      }
+      activity: {
+        log: (activity: any) => Promise<any>
+        getRecent: (hours?: number) => Promise<any>
+      }
+      appStats: {
+        get: () => Promise<any>
+      }
+      git: {
+        getConflictFiles: (workingDir: string) => Promise<{ success: boolean; files: string[] }>
+      }
+      pullRequests: {
+        checkGhCli: () => Promise<{ installed: boolean; authenticated: boolean }>
+        create: (
+          projects: Array<{ projectName: string; workingDir: string; branch: string; baseBranch: string }>,
+          options: { title: string; body: string; draft: boolean },
+        ) => Promise<{ results: Array<{ projectName: string; prUrl?: string; error?: string }> }>
+      }
       terminal?: {
-        create: (options: { cols: number, rows: number, cwd: string }) => Promise<{ pid: number, success: boolean, error?: string }>
-        write: (pid: number, data: string) => Promise<{ success: boolean, error?: string }>
-        resize: (pid: number, cols: number, rows: number) => Promise<{ success: boolean, error?: string }>
-        kill: (pid: number) => Promise<{ success: boolean, error?: string }>
+        create: (options: {
+          cols: number
+          rows: number
+          cwd: string
+        }) => Promise<{ pid: number; success: boolean; error?: string }>
+        write: (pid: number, data: string) => Promise<{ success: boolean; error?: string }>
+        resize: (pid: number, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>
+        kill: (pid: number) => Promise<{ success: boolean; error?: string }>
         onData: (pid: number, callback: (data: string) => void) => () => void
         onExit: (pid: number, callback: (code: number) => void) => () => void
       }

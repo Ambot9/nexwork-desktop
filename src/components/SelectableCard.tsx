@@ -9,37 +9,45 @@ interface SelectableCardProps {
   checkmarkPosition?: 'top-right' | 'bottom-right'
 }
 
-export function SelectableCard({ selected, onClick, isDark, children, checkmarkPosition = 'top-right' }: SelectableCardProps) {
-  const checkmarkStyle = checkmarkPosition === 'bottom-right' 
-    ? { bottom: 45, right: 30 }
-    : { top: 12, right: 12 }
+export function SelectableCard({
+  selected,
+  onClick,
+  isDark,
+  children,
+  checkmarkPosition = 'top-right',
+}: SelectableCardProps) {
+  const checkmarkStyle = checkmarkPosition === 'bottom-right' ? { bottom: 45, right: 30 } : { top: 12, right: 12 }
 
   return (
     <div
       onClick={onClick}
       style={{
-        border: selected ? '2px solid #1890ff' : (isDark ? '2px solid #3a3a3a' : '2px solid #d9d9d9'),
-        borderRadius: 8,
+        border: selected
+          ? '2px solid var(--color-accent, #4f6ef7)'
+          : `2px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+        borderRadius: 12,
         padding: 16,
         cursor: 'pointer',
         position: 'relative',
-        transition: 'all 0.3s',
-        background: isDark ? '#2a2a2a' : '#fafafa'
+        transition: 'all 200ms ease',
+        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)',
       }}
     >
       {selected && (
-        <div style={{ 
-          position: 'absolute',
-          ...checkmarkStyle,
-          background: '#000',
-          borderRadius: '50%',
-          width: 24,
-          height: 24,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            ...checkmarkStyle,
+            background: 'var(--color-accent, #4f6ef7)',
+            borderRadius: '50%',
+            width: 24,
+            height: 24,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10,
+          }}
+        >
           <Check size={14} color="#fff" />
         </div>
       )}

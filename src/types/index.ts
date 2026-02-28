@@ -19,6 +19,7 @@ export interface ProjectStatus {
   status: 'pending' | 'in_progress' | 'completed'
   branch: string
   worktreePath: string
+  baseBranch?: string
   lastUpdated?: string
 }
 
@@ -98,4 +99,13 @@ export interface CreateFeatureDTO {
 export interface UpdateFeatureDTO {
   name?: string
   projects?: ProjectStatus[]
+}
+
+export interface ActivityRecord {
+  id: string
+  type: 'create' | 'update' | 'delete' | 'complete' | 'push' | 'pull'
+  featureName: string
+  projectName?: string
+  timestamp: string
+  details: string
 }
