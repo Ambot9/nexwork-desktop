@@ -22,6 +22,11 @@ npm run build              # tsc + vite build + electron-builder
 
 # Type checking only
 npx tsc --noEmit
+npm run typecheck
+
+# Linting
+npm run lint               # Runs oxlint + eslint
+npm run lint:fix           # Auto-fix lint issues
 
 # Preview production renderer
 npm run preview
@@ -30,7 +35,7 @@ npm run preview
 npm run postinstall        # electron-builder install-app-deps
 ```
 
-**No test framework or linter configured.** Type checking via `tsc` is the only automated check.
+**Linting**: Uses ESLint with TypeScript support. Run `npm run lint` before committing.
 
 ## Architecture
 
@@ -38,16 +43,17 @@ npm run postinstall        # electron-builder install-app-deps
 electron/
   main/
     index.ts            # App lifecycle, window creation, auto-cleanup service
-    ipc-handlers.ts     # All IPC handlers (~1500 lines) - the core backend
+    ipc-handlers.ts    # All IPC handlers (~2000 lines) - the core backend
     storage.ts          # StorageService: electron-store + SQLite singleton
     security.ts         # Input validation, sanitization, rate limiting
     notifications.ts    # Native OS notifications
     tray.ts             # System tray menu
+    auth-store.ts       # GitHub/GitLab authentication state
   preload/
     index.ts            # contextBridge exposing nexworkAPI to renderer
 
 src/                    # React renderer process
-  App.tsx               # Root component, manual view routing (dashboard/details/settings)
+  App.tsx               # Root component, manual view routing (dashboard/details/settings/git-auth)
   components/
     CreateFeatureModal.tsx   # Multi-step feature creation wizard
     FeatureDetails.tsx       # Main feature view (large file ~107KB)
@@ -56,6 +62,8 @@ src/                    # React renderer process
     AITerminal.tsx           # AI-powered terminal
   pages/
     Settings.tsx        # Settings form with electron-store persistence
+    GitAuth.tsx         # GitHub/GitLab authentication UI
+    ActivityLog.tsx     # Activity history
   services/
     ai-service.ts       # Claude/OpenAI/Ollama integration
   contexts/
@@ -77,6 +85,7 @@ All renderer-to-main communication uses `window.nexworkAPI` (exposed via preload
 - `templates:*` - Feature templates CRUD
 - `activity:*` - Activity logging
 - `terminal:*` - PTY create/write/resize/kill
+- `gitAuth:*` - GitHub/GitLab authentication (checkAuth, githubLogin, gitlabLogin, logout)
 
 **Security model**: Context isolation enabled, nodeIntegration disabled, sandbox true. All IPC inputs validated in `security.ts`.
 
@@ -177,9 +186,11 @@ cd ../nexwork-website && npm run build && npx wrangler deploy
 | All IPC handlers | `electron/main/ipc-handlers.ts` |
 | Storage service | `electron/main/storage.ts` |
 | Security/validation | `electron/main/security.ts` |
+| Auth store | `electron/main/auth-store.ts` |
 | Preload bridge | `electron/preload/index.ts` |
 | React entry | `src/main.tsx` |
 | Root component | `src/App.tsx` |
+| Auth page | `src/pages/GitAuth.tsx` |
 | Type definitions | `src/types/index.ts` |
 | Theme system | `src/contexts/ThemeContext.tsx` |
 | AI service | `src/services/ai-service.ts` |
