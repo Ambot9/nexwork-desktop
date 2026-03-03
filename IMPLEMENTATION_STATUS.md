@@ -2,7 +2,7 @@
 
 ## 🎉 MAJOR MILESTONE ACHIEVED!
 
-We've successfully built a **fully functional desktop application** for Nexwork with beautiful UI and core features!
+We've successfully built a **fully functional desktop application** for Nexwork with beautiful UI, multi-account Git auth, and per-account workspaces/features.
 
 ---
 
@@ -63,11 +63,23 @@ We've successfully built a **fully functional desktop application** for Nexwork 
 - [x] DevTools integration
 - [x] Proper app lifecycle
 
+### 7. Git Authentication & Account Scoping ✅ (100%)
+- [x] GitHub multi-account support with account picker
+- [x] GitLab (cloud + self-hosted) login, including device-code flow
+- [x] Per-account auth persistence in `nexwork-auth.json`
+- [x] Self-hosted GitLab avatar support via CSP update
+
+### 8. Per-account Workspaces & Features ✅ (100%)
+- [x] Per-account workspace mapping via `perAccountWorkspaces`
+- [x] Features tagged with `ownerAccountId` for isolation
+- [x] Local mode separated from Git accounts
+- [x] App reloads workspace + features when account changes
+
 ---
 
 ## 📊 Implementation Progress
 
-**Overall Progress: 70%** (Core features complete!)
+**Overall Progress: 80%** (Core + multi-account features complete)
 
 | Component | Status | Progress |
 |-----------|--------|----------|
@@ -76,9 +88,9 @@ We've successfully built a **fully functional desktop application** for Nexwork 
 | Create Feature | ✅ Complete | 100% |
 | Feature Details | ✅ Complete | 100% |
 | IPC Handlers | ✅ Complete | 100% |
-| CLI Integration | 🟡 Partial | 50% |
+| CLI Integration | 🟡 Partial | 60% |
 | System Tray | ⏳ Pending | 0% |
-| Settings Panel | ⏳ Pending | 0% |
+| Settings Panel | 🟡 Partial | 50% |
 | Build & Package | ⏳ Pending | 0% |
 
 ---
@@ -87,7 +99,7 @@ We've successfully built a **fully functional desktop application** for Nexwork 
 
 ### Launch the App
 ```bash
-cd /Users/mac/Documents/Build/nexwork-desktop
+cd /Users/mac/Dev/Build/nexwork-desktop
 npm run dev
 ```
 
@@ -286,6 +298,11 @@ nexwork-desktop/
    - Need to create app icons
    - Add to resources/
 
+5. **electron-store ESM in packaged build** ⚠️
+   - On packaged builds, `electron-store` throws `ERR_REQUIRE_ESM` when saving settings.
+   - Workspace selection still works in-memory, but persistence to settings can fail with a warning.
+   - Auth persistence uses a separate JSON file (`auth-store.ts`) and is unaffected.
+
 ---
 
 ## 💡 Cool Features Working
@@ -299,6 +316,8 @@ nexwork-desktop/
 - ✅ Responsive design
 - ✅ Type-safe throughout
 - ✅ Fast HMR in development
+- ✅ Multi-account Git auth (GitHub + GitLab + self-hosted)
+- ✅ Per-account workspace roots and feature scoping
 
 ---
 

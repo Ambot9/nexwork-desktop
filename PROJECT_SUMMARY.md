@@ -40,6 +40,14 @@ A beautiful, cross-platform desktop application for **Nexwork** using Electron +
 
 ## 📊 Current State
 
+### Recent Additions (Multi-account Git)
+
+- GitHub and GitLab authentication now support multiple saved accounts with a Google-style account picker.
+- Features are scoped per Git account using an `ownerAccountId`, so each account only sees its own features.
+- Workspace roots are stored per account via `perAccountWorkspaces`, with local mode kept separate.
+- Self-hosted GitLab instances (including `http://` URLs) now work properly for avatars via a relaxed CSP.
+- The Settings page workspace selector now writes per-account workspace paths, and the app reloads workspace + features when accounts change.
+
 ### File Structure
 ```
 nexwork-desktop/
@@ -135,7 +143,7 @@ stats.getGitStats(featureId, projectName) - Get git stats
 
 ### Development
 ```bash
-cd /Users/mac/Documents/Build/nexwork-desktop
+cd /Users/mac/Dev/Build/nexwork-desktop
 npm run dev
 ```
 
@@ -181,55 +189,25 @@ The app is currently showing:
 └──┴─────────────────────────────────────────────────────────────┘
 ```
 
-## 🎯 Next Steps (Phase 2)
+## 🎯 Next Steps (Current)
 
 ### High Priority
-1. **Feature Creation Dialog**
-   - Multi-step wizard
-   - Template selector with preview
-   - Project selection
-   - Form validation
+1. Finalize per-account workspace behavior
+   - Ensure the selected workspace root reliably appears in Settings for each account.
+   - Make sure switching accounts consistently swaps workspace + features with no data leakage.
 
-2. **Nexwork CLI Integration**
-   - Import ConfigManager
-   - Import WorktreeManager
-   - Import TemplateManager
-   - Wire up IPC handlers
+2. Harden multi-account flows
+   - Exercise GitHub and GitLab (including self-hosted) account pickers.
+   - Verify device-code UX and error handling when CLIs are missing or unauthenticated.
 
-3. **Feature Details Page**
-   - Full statistics view
-   - Project list with actions
-   - Charts and graphs
-   - Update/complete actions
+3. End-to-end testing
+   - Run through feature creation/completion across two Git accounts and local mode.
+   - Confirm per-account features and worktrees behave correctly.
 
-### Medium Priority
-4. **System Tray**
-   - Tray icon with menu
-   - Quick actions
-   - Notifications
-
-5. **Settings Panel**
-   - Workspace configuration
-   - Template management
-   - Preferences
-
-6. **Template Manager**
-   - Create/edit templates
-   - Template gallery
-   - Import/export
-
-### Low Priority
-7. **Build & Package**
-   - App icons
-   - Code signing
-   - Auto-updater
-   - Distribution
-
-8. **Polish**
-   - Loading states
-   - Error handling
-   - Animations
-   - Dark mode toggle
+### Medium / Later
+4. System tray and notifications polish
+5. Template manager UX improvements
+6. Build, packaging, and distribution polish (icons, installers, auto-update)
 
 ## 🛠️ Technologies Used
 

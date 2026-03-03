@@ -123,8 +123,10 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
   gitAuth: {
     checkAuth: () => ipcRenderer.invoke('git:checkAuth'),
     githubLogin: () => ipcRenderer.invoke('git:githubLogin'),
+    githubLoginNew: () => ipcRenderer.invoke('git:githubLoginNew'),
     gitlabLogin: () => ipcRenderer.invoke('git:gitlabLogin'),
-    saveAuth: (data: { provider: string; user: string; avatar: string }) => ipcRenderer.invoke('git:saveAuth', data),
+    saveAuth: (data: { provider: string; user: string; avatar: string; gitlabUrl?: string }) =>
+      ipcRenderer.invoke('git:saveAuth', data),
     onAuthCode: (callback: (code: string) => void) => {
       const listener = (_: any, code: string) => callback(code)
       ipcRenderer.on('git:authCode', listener)
@@ -208,6 +210,14 @@ declare global {
           error?: string
           alreadyLoggedIn?: boolean
           savedAccount?: boolean
+          multipleAccounts?: boolean
+          accounts?: Array<{ id: string; user: string; avatar: string }>
+        }>
+        githubLoginNew: () => Promise<{
+          success: boolean
+          user?: string
+          avatar?: string
+          error?: string
         }>
         gitlabLogin: () => Promise<{
           success: boolean
@@ -218,6 +228,8 @@ declare global {
           savedAccount?: boolean
           isSelfHosted?: boolean
           gitlabUrl?: string
+          multipleAccounts?: boolean
+          accounts?: Array<{ id: string; user: string; avatar: string; gitlabUrl?: string; isSelfHosted?: boolean }>
         }>
         saveAuth: (data: {
           provider: string

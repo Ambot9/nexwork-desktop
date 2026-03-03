@@ -1,6 +1,6 @@
-import Store from 'electron-store'
 import Database from 'better-sqlite3'
 import path from 'path'
+import fs from 'fs'
 import { app } from 'electron'
 
 // Schema interfaces
@@ -14,6 +14,9 @@ interface AppSettings {
   aiApiKey: string
   aiModel: string
   lastWorkspace: string
+  perAccountWorkspaces?: {
+    [accountId: string]: string
+  }
   gitAuthProvider: string
   gitAuthUser: string
   gitAuthAvatar: string
@@ -46,38 +49,64 @@ interface ActivityRecord {
   details: string
 }
 
+const SETTINGS_FILE_NAME = 'nexwork-settings.json'
+
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'dark',
+  notificationSounds: true,
+  selectedSound: 'codeComplete',
+  startOnStartup: false,
+  aiEnabled: false,
+  aiProvider: 'claude',
+  aiApiKey: '',
+  aiModel: 'claude-3-5-sonnet-20241022',
+  lastWorkspace: '',
+  perAccountWorkspaces: {},
+  gitAuthProvider: '',
+  gitAuthUser: '',
+  gitAuthAvatar: '',
+  windowBounds: {
+    width: 1200,
+    height: 800,
+  },
+}
+
 class StorageService {
-  private settingsStore: Store<AppSettings>
+  private settingsPath: string
+  private settingsCache: AppSettings
   private db: Database.Database | null = null
   private dbPath: string
 
   constructor() {
-    // Initialize electron-store for settings
-    this.settingsStore = new Store<AppSettings>({
-      name: 'nexwork-settings',
-      defaults: {
-        theme: 'dark',
-        notificationSounds: true,
-        selectedSound: 'codeComplete',
-        startOnStartup: false,
-        aiEnabled: false,
-        aiProvider: 'claude',
-        aiApiKey: '',
-        aiModel: 'claude-3-5-sonnet-20241022',
-        lastWorkspace: '',
-        gitAuthProvider: '',
-        gitAuthUser: '',
-        gitAuthAvatar: '',
-        windowBounds: {
-          width: 1200,
-          height: 800,
-        },
-      },
-    })
+    // Initialize JSON-file-based settings to avoid electron-store ESM issues
+    const userDataPath = app.getPath('userData')
+    this.settingsPath = path.join(userDataPath, SETTINGS_FILE_NAME)
+    this.settingsCache = this.readSettings()
 
     // Set up database path in user data directory
-    this.dbPath = path.join(app.getPath('userData'), 'nexwork-data.db')
+    this.dbPath = path.join(userDataPath, 'nexwork-data.db')
     this.initDatabase()
+  }
+
+  private readSettings(): AppSettings {
+    try {
+      if (fs.existsSync(this.settingsPath)) {
+        const raw = fs.readFileSync(this.settingsPath, 'utf-8')
+        const parsed = JSON.parse(raw)
+        return { ...DEFAULT_SETTINGS, ...parsed }
+      }
+    } catch {
+      // Corrupt settings file – fall back to defaults
+    }
+    return { ...DEFAULT_SETTINGS }
+  }
+
+  private writeSettings(settings: AppSettings): void {
+    try {
+      fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
+    } catch {
+      // If writing fails (e.g. read-only disk), keep in-memory cache
+    }
   }
 
   // Initialize SQLite database
@@ -131,19 +160,21 @@ class StorageService {
   // ==================== SETTINGS METHODS ====================
 
   getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
-    return this.settingsStore.get(key)
+    return this.settingsCache[key]
   }
 
   setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
-    this.settingsStore.set(key, value)
+    this.settingsCache = { ...this.settingsCache, [key]: value }
+    this.writeSettings(this.settingsCache)
   }
 
   getAllSettings(): AppSettings {
-    return this.settingsStore.store
+    return this.settingsCache
   }
 
   resetSettings(): void {
-    this.settingsStore.clear()
+    this.settingsCache = { ...DEFAULT_SETTINGS }
+    this.writeSettings(this.settingsCache)
   }
 
   // ==================== FEATURES METHODS ====================

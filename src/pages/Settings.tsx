@@ -137,9 +137,9 @@ export function Settings() {
       const selectedPath = await window.nexworkAPI.selectFolder()
       if (selectedPath) {
         await window.nexworkAPI.config.setWorkspace(selectedPath)
-        setConfig((prev) => (prev ? { ...prev, workspaceRoot: selectedPath } : null))
         message.success(`Workspace updated to: ${selectedPath}`)
-        setTimeout(() => loadSettings(), 500)
+        // Reload config from main so we respect per-account workspace mapping
+        await loadSettings()
       }
     } catch (error: any) {
       message.error(error.message || 'Failed to select workspace')

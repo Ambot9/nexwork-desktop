@@ -93,7 +93,8 @@ function App() {
           setAuthUser(auth.user)
           setAuthAvatar(auth.avatar)
           setAuthProvider(auth.provider)
-          loadFeatures()
+          // Ensure workspace root is loaded for this account before fetching features
+          loadWorkspaceAndFeatures()
         } else {
           setCurrentView('git-auth')
           setLoading(false)
@@ -119,6 +120,16 @@ function App() {
     }
   }
 
+  const loadWorkspaceAndFeatures = useCallback(async () => {
+    try {
+      // This will compute the workspace root for the current account
+      await window.nexworkAPI.config.load()
+    } catch {
+      // Ignore errors – config:load already handles first-time setup
+    }
+    await loadFeatures()
+  }, [])
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -142,13 +153,17 @@ function App() {
     setCurrentView('feature-details')
   }
 
-  const handleAuthenticated = useCallback((info: { provider: string; user: string; avatar: string }) => {
-    setAuthUser(info.user)
-    setAuthAvatar(info.avatar)
-    setAuthProvider(info.provider)
-    setCurrentView('dashboard')
-    loadFeatures()
-  }, [])
+  const handleAuthenticated = useCallback(
+    (info: { provider: string; user: string; avatar: string }) => {
+      setAuthUser(info.user)
+      setAuthAvatar(info.avatar)
+      setAuthProvider(info.provider)
+      setCurrentView('dashboard')
+      // After switching/adding an account, reload workspace + features for that account
+      loadWorkspaceAndFeatures()
+    },
+    [loadWorkspaceAndFeatures],
+  )
 
   const handleLogout = useCallback(async () => {
     await window.nexworkAPI.gitAuth.logout()

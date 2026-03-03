@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { App, Button, Input, Typography, Spin, theme } from 'antd'
-import { FolderGit2, Github, ArrowRight, Copy, Check, Globe, Cloud, ChevronLeft } from 'lucide-react'
+import { App, Button, Input, Typography, Spin, theme, Avatar, List } from 'antd'
+import { FolderGit2, Github, ArrowRight, Copy, Check, Globe, Cloud, ChevronLeft, User } from 'lucide-react'
 
 const { Title, Text } = Typography
 
@@ -14,8 +14,13 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
   const [gitlabUrl, setGitlabUrl] = useState('')
   const [loading, setLoading] = useState<'github' | 'gitlab' | null>(null)
   const [authCode, setAuthCode] = useState<string | null>(null)
+  const [authProvider, setAuthProvider] = useState<'github' | 'gitlab' | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
   const [gitlabStep, setGitlabStep] = useState<'idle' | 'choose' | 'cloud' | 'self-hosted'>('idle')
+  const [accountPicker, setAccountPicker] = useState<null | {
+    provider: 'github' | 'gitlab'
+    accounts: Array<{ id: string; user: string; avatar?: string; gitlabUrl?: string; isSelfHosted?: boolean }>
+  }>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const {
     token: { colorBgContainer, colorBgElevated, colorBorder, colorTextSecondary },
@@ -56,6 +61,7 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
 
   const handleGitHubLogin = async () => {
     if (loading) return
+    setAuthProvider('github')
     setLoading('github')
     setAuthCode(null)
     startAuthCodeListener()
@@ -67,6 +73,10 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
         return
       }
       // If already logged in or saved account, use it
+      if (result.multipleAccounts && result.accounts && result.accounts.length > 0) {
+        setAccountPicker({ provider: 'github', accounts: result.accounts })
+        return
+      }
       if (result.alreadyLoggedIn || result.savedAccount) {
         await saveAndFinish('github', result.user || 'GitHub User', result.avatar || '')
         if (result.savedAccount) {
@@ -87,16 +97,23 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
   const handleGitLabClick = async () => {
     if (loading) return
     if (gitlabStep !== 'idle') return
+    setAuthProvider('gitlab')
     setLoading('gitlab')
+    setAuthCode(null)
     startAuthCodeListener()
+    let goToChoose = false
     try {
       const result = await window.nexworkAPI.gitAuth.gitlabLogin()
       cleanupListener()
       if (result.success) {
         // If already logged in or saved account, use it
+        if (result.multipleAccounts && result.accounts && result.accounts.length > 0) {
+          setAccountPicker({ provider: 'gitlab', accounts: result.accounts })
+          return
+        }
         if (result.alreadyLoggedIn || result.savedAccount) {
           const provider = result.isSelfHosted ? 'gitlab-self-hosted' : 'gitlab'
-          await saveAndFinish(provider, result.user || 'GitLab User', result.avatar || '')
+          await saveAndFinish(provider, result.user || 'GitLab User', result.avatar || '', result.gitlabUrl)
           if (result.savedAccount) {
             if (result.isSelfHosted && result.gitlabUrl) {
               message.info(`Using saved self-hosted account: ${result.user} (${result.gitlabUrl})`)
@@ -113,12 +130,18 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
         message.error(result.error || 'GitLab authentication failed')
         return
       }
+      goToChoose = true
     } catch {
       cleanupListener()
+      goToChoose = true
+    } finally {
+      setLoading(null)
+      setAuthCode(null)
+      setAuthProvider(null)
     }
-    setLoading(null)
-    setAuthCode(null)
-    setGitlabStep('choose')
+    if (goToChoose) {
+      setGitlabStep('choose')
+    }
   }
 
   const handleGitLabCloud = () => {
@@ -180,7 +203,7 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
   }
 
   // ── Main view: provider selection ──
-  if (gitlabStep === 'idle' && !authCode) {
+  if (!authCode && !accountPicker && gitlabStep === 'idle') {
     return (
       <Page>
         <Logo />
@@ -215,12 +238,113 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
     )
   }
 
-  // ── Auth code view (GitHub / GitLab CLI waiting) ──
-  if (authCode) {
+  // ── Account picker (Google-style) ──
+  if (accountPicker) {
     return (
       <Page>
         <Logo />
-        <Heading title="Authorize in Browser" subtitle="Enter this one-time code on the page we opened." />
+        <Heading
+          title={accountPicker.provider === 'github' ? 'Choose a GitHub account' : 'Choose a GitLab account'}
+          subtitle="Pick an existing account or continue with another one."
+        />
+        <div style={{ marginTop: 8 }}>
+          <List
+            itemLayout="horizontal"
+            dataSource={accountPicker.accounts}
+            renderItem={(item) => (
+              <List.Item
+                style={{ cursor: 'pointer', paddingInline: 0 }}
+                onClick={() => {
+                  if (accountPicker.provider === 'github') {
+                    saveAndFinish('github', item.user, item.avatar || '')
+                  } else {
+                    const provider = item.isSelfHosted ? 'gitlab-self-hosted' : 'gitlab'
+                    saveAndFinish(provider, item.user, item.avatar || '', item.gitlabUrl)
+                  }
+                }}
+              >
+                <List.Item.Meta
+                  avatar={
+                    item.avatar ? (
+                      <Avatar src={item.avatar} size={32} />
+                    ) : (
+                      <Avatar size={32} icon={<User size={16} />} />
+                    )
+                  }
+                  title={item.user}
+                  description={
+                    accountPicker.provider === 'gitlab' && item.gitlabUrl
+                      ? item.gitlabUrl
+                      : accountPicker.provider === 'github'
+                        ? 'GitHub'
+                        : undefined
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </div>
+        <Divider />
+        <Button
+          block
+          type="default"
+          size="large"
+          onClick={() => {
+            setAccountPicker(null)
+            if (accountPicker.provider === 'github') {
+              if (loading) return
+              setAuthProvider('github')
+              setLoading('github')
+              setAuthCode(null)
+              startAuthCodeListener()
+              window.nexworkAPI.gitAuth
+                .githubLoginNew()
+                .then(async (result) => {
+                  cleanupListener()
+                  if (!result.success) {
+                    message.error(result.error || 'GitHub authentication failed')
+                    return
+                  }
+                  await saveAndFinish('github', result.user || 'GitHub User', result.avatar || '')
+                })
+                .catch((error: any) => {
+                  cleanupListener()
+                  message.error(error.message || 'GitHub login failed')
+                })
+                .finally(() => {
+                  setLoading(null)
+                  setAuthCode(null)
+                  setAuthProvider(null)
+                })
+            } else {
+              setGitlabStep('choose')
+            }
+          }}
+          style={{ borderRadius: 10, height: 44, fontWeight: 500 }}
+        >
+          Use another {accountPicker.provider === 'github' ? 'GitHub' : 'GitLab'} account
+        </Button>
+        <BackLink
+          onClick={() => {
+            setAccountPicker(null)
+          }}
+        />
+      </Page>
+    )
+  }
+
+  // ── Auth code view (GitHub / GitLab CLI waiting) ──
+  if (authCode) {
+    const subtitle =
+      authProvider === 'github'
+        ? 'Go to https://github.com/login/device and enter this one-time code.'
+        : authProvider === 'gitlab'
+          ? 'Enter this one-time code on the GitLab page we opened.'
+          : 'Enter this one-time code on the page we opened.'
+    return (
+      <Page>
+        <Logo />
+        <Heading title="Authorize in Browser" subtitle={subtitle} />
         <div
           style={{
             textAlign: 'center',

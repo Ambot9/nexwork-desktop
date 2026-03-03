@@ -346,8 +346,26 @@ export function registerIpcHandlers() {
       requireWorkspace()
       const configManager = getConfigManager()
       const features = configManager.getAllFeatures()
+
+      let filteredFeatures: any[] = []
+      try {
+        const { authStore } = await import('./auth-store')
+        const auth = authStore.get()
+        const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+
+        if (ownerAccountId) {
+          filteredFeatures = features.filter((f: any) => f.ownerAccountId === ownerAccountId)
+        } else {
+          // Local mode or no auth: show only features with no owner (legacy / local)
+          filteredFeatures = features.filter((f: any) => !f.ownerAccountId)
+        }
+      } catch {
+        // If auth store is unavailable, fall back to legacy behavior (no scoping)
+        filteredFeatures = features
+      }
+
       updateTrayWithFeatures()
-      return features
+      return filteredFeatures
     } catch (error: any) {
       log.error('Failed to get features:', error)
       return []
@@ -358,7 +376,28 @@ export function registerIpcHandlers() {
     try {
       requireWorkspace()
       const configManager = getConfigManager()
-      return configManager.getFeature(name)
+      const feature = configManager.getFeature(name)
+
+      if (!feature) return null
+
+      try {
+        const { authStore } = await import('./auth-store')
+        const auth = authStore.get()
+        const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+
+        if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
+          return null
+        }
+
+        if (!ownerAccountId && feature.ownerAccountId) {
+          // In local/no-auth mode, hide features owned by specific accounts
+          return null
+        }
+      } catch {
+        // If authStore is unavailable, fall back to returning the feature
+      }
+
+      return feature
     } catch (error: any) {
       log.error('Failed to get feature:', error)
       return null
@@ -412,12 +451,23 @@ export function registerIpcHandlers() {
       })
 
       // Create feature object (no ID, just name)
-      const newFeature = {
+      const newFeature: any = {
         name: data.name,
         projects: projectStatuses,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...(data.expiresAt && { expiresAt: data.expiresAt }),
+      }
+
+      // Scope feature to the currently active Git account (if any)
+      try {
+        const { authStore } = await import('./auth-store')
+        const auth = authStore.get()
+        if (auth.provider && auth.provider !== 'local' && auth.activeAccountId) {
+          newFeature.ownerAccountId = auth.activeAccountId
+        }
+      } catch {
+        // If auth store is unavailable, leave feature unscoped
       }
 
       // Add feature to config
@@ -578,6 +628,25 @@ export function registerIpcHandlers() {
       const feature = configManager.getFeature(name)
 
       if (feature) {
+        try {
+          const { authStore } = await import('./auth-store')
+          const auth = authStore.get()
+          const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+
+          if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
+            throw new Error('Cannot complete feature owned by a different account')
+          }
+
+          if (!ownerAccountId && feature.ownerAccountId) {
+            throw new Error('Cannot complete feature owned by a specific account in local mode')
+          }
+        } catch (authError: any) {
+          if (authError?.message?.startsWith('Cannot complete feature')) {
+            throw authError
+          }
+          // Otherwise ignore authStore errors
+        }
+
         // Mark all projects as completed
         feature.projects.forEach((project: any) => {
           configManager.updateProjectStatus(name, project.name, 'completed')
@@ -810,8 +879,32 @@ export function registerIpcHandlers() {
   // Config
   ipcMain.handle('config:load', async () => {
     try {
-      // Check if workspace is set
-      if (!currentWorkspaceRoot) {
+      // Determine workspace root based on current Git account
+      let workspaceRoot = ''
+
+      try {
+        const { authStore } = await import('./auth-store')
+        const { storage } = await import('./storage')
+        const auth = authStore.get()
+        const perAccount = storage.getSetting('perAccountWorkspaces') || {}
+        const key = auth.provider && auth.provider !== 'local' && auth.activeAccountId ? auth.activeAccountId : null
+
+        if (key) {
+          // Logged-in Git account: always use per-account workspace mapping
+          workspaceRoot = perAccount[key] || ''
+        } else {
+          // Local/no provider: fall back to current global workspace
+          workspaceRoot = currentWorkspaceRoot || storage.getSetting('lastWorkspace') || ''
+        }
+      } catch {
+        // If auth or storage fails, do not reuse a previous workspace implicitly
+        workspaceRoot = ''
+      }
+
+      // Keep global in sync for downstream Git/feature IPC handlers
+      currentWorkspaceRoot = workspaceRoot
+
+      if (!workspaceRoot) {
         return {
           workspaceRoot: '',
           projects: [],
@@ -832,7 +925,7 @@ export function registerIpcHandlers() {
       }))
 
       return {
-        workspaceRoot: currentWorkspaceRoot,
+        workspaceRoot,
         projects: projects,
         features: config.features || [],
         userConfig: config.userConfig || {
@@ -850,6 +943,34 @@ export function registerIpcHandlers() {
           defaultTemplate: 'default',
         },
       }
+    }
+  })
+
+  ipcMain.handle('config:getWorkspaceRoot', async () => {
+    try {
+      let workspaceRoot = ''
+
+      try {
+        const { authStore } = await import('./auth-store')
+        const { storage } = await import('./storage')
+        const auth = authStore.get()
+        const perAccount = storage.getSetting('perAccountWorkspaces') || {}
+        const key = auth.provider && auth.provider !== 'local' && auth.activeAccountId ? auth.activeAccountId : null
+
+        if (key) {
+          workspaceRoot = perAccount[key] || ''
+        } else {
+          workspaceRoot = storage.getSetting('lastWorkspace') || ''
+        }
+      } catch {
+        workspaceRoot = currentWorkspaceRoot || ''
+      }
+
+      currentWorkspaceRoot = workspaceRoot
+      return { success: true, workspaceRoot }
+    } catch (error: any) {
+      log.error('config:getWorkspaceRoot error:', error)
+      return { success: false, workspaceRoot: '' }
     }
   })
 
@@ -888,11 +1009,22 @@ export function registerIpcHandlers() {
       currentWorkspaceRoot = workspacePath
       log.info('Workspace set to:', currentWorkspaceRoot)
 
-      // Save to settings for persistence
+      // Save to settings for persistence, scoped per Git account when available
       try {
         const { storage } = await import('./storage')
+        const { authStore } = await import('./auth-store')
+        const auth = authStore.get()
+
         storage.setSetting('lastWorkspace', workspacePath)
-        log.info('💾 Workspace saved to settings')
+
+        if (auth.provider && auth.provider !== 'local' && auth.activeAccountId) {
+          const perAccount = storage.getSetting('perAccountWorkspaces') || {}
+          perAccount[auth.activeAccountId] = workspacePath
+          storage.setSetting('perAccountWorkspaces', perAccount)
+          log.info('💾 Workspace saved for account:', auth.activeAccountId)
+        } else {
+          log.info('💾 Workspace saved to settings (no active Git account)')
+        }
       } catch (storageError) {
         log.warn('⚠️ Could not save workspace to settings:', storageError)
       }
@@ -1711,7 +1843,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:checkAuth', async () => {
     try {
       const { authStore } = await import('./auth-store')
-      const { provider, user, avatar } = authStore.get()
+      const { provider, user, avatar, activeAccountId, accounts } = authStore.get()
 
       if (!provider || provider === '') {
         return { authenticated: false, provider: '', user: '', avatar: '' }
@@ -1725,16 +1857,27 @@ export function registerIpcHandlers() {
         // Verify token is still valid
         try {
           await execAsync('gh auth status 2>&1', { timeout: 10000 })
-          return { authenticated: true, provider: 'github', user, avatar }
+          const active = (accounts || []).find((a: any) => a.id === activeAccountId) || null
+          return {
+            authenticated: true,
+            provider: 'github',
+            user: active?.user || user,
+            avatar: active?.avatar || avatar,
+          }
         } catch {
-          // Token expired or invalid — clear stored auth
           authStore.clear()
           return { authenticated: false, provider: '', user: '', avatar: '' }
         }
       }
 
-      if (provider === 'gitlab') {
-        return { authenticated: true, provider: 'gitlab', user, avatar }
+      if (provider === 'gitlab' || provider === 'gitlab-self-hosted') {
+        const active = (accounts || []).find((a: any) => a.id === activeAccountId) || null
+        return {
+          authenticated: true,
+          provider,
+          user: active?.user || user,
+          avatar: active?.avatar || avatar,
+        }
       }
 
       return { authenticated: false, provider: '', user: '', avatar: '' }
@@ -1747,7 +1890,22 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:githubLogin', async (event) => {
     const { authStore } = await import('./auth-store')
 
-    // Check if gh is installed FIRST
+    const savedAuth = authStore.get()
+    const githubAccounts = (savedAuth.accounts || []).filter((a: any) => a.provider === 'github')
+
+    // If we already know about at least one GitHub account, always offer the picker
+    if (githubAccounts.length >= 1) {
+      return {
+        success: true,
+        savedAccount: true,
+        multipleAccounts: true,
+        accounts: githubAccounts.map((a: any) => ({ id: a.id, user: a.user, avatar: a.avatar })),
+      }
+    }
+
+    // No saved GitHub accounts yet – fall back to CLI-based detection/login
+
+    // Check if gh is installed FIRST (needed for login / refresh flows)
     try {
       await execAsync('which gh', { timeout: 5000 })
     } catch {
@@ -1763,21 +1921,55 @@ export function registerIpcHandlers() {
         const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
         const user = userOut.trim()
         const avatar = avatarOut.trim()
-        // Save to auth store for persistence
-        authStore.set({ provider: 'github', user, avatar })
+        const id = `github:${user}`
+        const now = new Date().toISOString()
+        const current = authStore.get()
+        const accounts = current.accounts || []
+        const existingIndex = accounts.findIndex((a: any) => a.id === id)
+        const updatedAccount = {
+          id,
+          provider: 'github' as const,
+          user,
+          avatar,
+          lastUsedAt: now,
+        }
+        if (existingIndex >= 0) {
+          accounts[existingIndex] = updatedAccount
+        } else {
+          accounts.push(updatedAccount)
+        }
+        authStore.set({
+          provider: 'github',
+          user,
+          avatar,
+          accounts,
+          activeAccountId: id,
+        })
         return { success: true, user, avatar, alreadyLoggedIn: true }
       } catch {
-        authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
-        return { success: true, user: 'GitHub User', avatar: '', alreadyLoggedIn: true }
+        const fallbackUser = 'GitHub User'
+        const id = `github:${fallbackUser}`
+        const now = new Date().toISOString()
+        const current = authStore.get()
+        const accounts = current.accounts || []
+        const existingIndex = accounts.findIndex((a: any) => a.id === id)
+        const updatedAccount = {
+          id,
+          provider: 'github' as const,
+          user: fallbackUser,
+          avatar: '',
+          lastUsedAt: now,
+        }
+        if (existingIndex >= 0) {
+          accounts[existingIndex] = updatedAccount
+        } else {
+          accounts.push(updatedAccount)
+        }
+        authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
+        return { success: true, user: fallbackUser, avatar: '', alreadyLoggedIn: true }
       }
     } catch {
-      // Not authenticated with gh CLI — check if we have saved GitHub auth from before
-      const savedAuth = authStore.get()
-      if (savedAuth.provider === 'github' && savedAuth.user) {
-        // User was previously logged in with GitHub - let them know to re-authenticate or use saved info
-        return { success: true, user: savedAuth.user, avatar: savedAuth.avatar, savedAccount: true }
-      }
-      // No previous GitHub auth - proceed with login flow
+      // Not authenticated with gh CLI - proceed with login flow below
     }
 
     const { spawn } = require('child_process')
@@ -1819,11 +2011,46 @@ export function registerIpcHandlers() {
             const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
             const user = userOut.trim()
             const avatar = avatarOut.trim()
-            authStore.set({ provider: 'github', user, avatar })
+            const id = `github:${user}`
+            const now = new Date().toISOString()
+            const current = authStore.get()
+            const accounts = current.accounts || []
+            const existingIndex = accounts.findIndex((a: any) => a.id === id)
+            const updatedAccount = {
+              id,
+              provider: 'github' as const,
+              user,
+              avatar,
+              lastUsedAt: now,
+            }
+            if (existingIndex >= 0) {
+              accounts[existingIndex] = updatedAccount
+            } else {
+              accounts.push(updatedAccount)
+            }
+            authStore.set({ provider: 'github', user, avatar, accounts, activeAccountId: id })
             resolve({ success: true, user, avatar })
           } catch {
-            authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
-            resolve({ success: true, user: 'GitHub User', avatar: '' })
+            const fallbackUser = 'GitHub User'
+            const id = `github:${fallbackUser}`
+            const now = new Date().toISOString()
+            const current = authStore.get()
+            const accounts = current.accounts || []
+            const existingIndex = accounts.findIndex((a: any) => a.id === id)
+            const updatedAccount = {
+              id,
+              provider: 'github' as const,
+              user: fallbackUser,
+              avatar: '',
+              lastUsedAt: now,
+            }
+            if (existingIndex >= 0) {
+              accounts[existingIndex] = updatedAccount
+            } else {
+              accounts.push(updatedAccount)
+            }
+            authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
+            resolve({ success: true, user: fallbackUser, avatar: '' })
           }
         } else {
           resolve({ success: false, error: 'Authentication failed or was cancelled' })
@@ -1846,6 +2073,114 @@ export function registerIpcHandlers() {
     })
   })
 
+  ipcMain.handle('git:githubLoginNew', async (event) => {
+    const { authStore } = await import('./auth-store')
+
+    // Force a fresh GitHub CLI login flow, regardless of saved accounts
+    try {
+      await execAsync('which gh', { timeout: 5000 })
+    } catch {
+      return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
+    }
+
+    const { spawn } = require('child_process')
+
+    return new Promise((resolve) => {
+      const child = spawn('gh', ['auth', 'login', '--web', '-p', 'https', '-h', 'github.com'], {
+        env: { ...process.env },
+      })
+
+      let _output = ''
+      let resolved = false
+
+      const handleData = (data: Buffer) => {
+        const text = data.toString()
+        _output += text
+
+        const codeMatch = text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i)
+        if (codeMatch) {
+          event.sender.send('git:authCode', codeMatch[1])
+        }
+
+        if (text.includes('Press Enter') || text.includes('press Enter')) {
+          child.stdin.write('\n')
+        }
+      }
+
+      child.stdout.on('data', handleData)
+      child.stderr.on('data', handleData)
+
+      child.on('close', async (exitCode: number) => {
+        if (resolved) return
+        resolved = true
+
+        if (exitCode === 0) {
+          try {
+            const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
+            const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
+            const user = userOut.trim()
+            const avatar = avatarOut.trim()
+            const id = `github:${user}`
+            const now = new Date().toISOString()
+            const current = authStore.get()
+            const accounts = current.accounts || []
+            const existingIndex = accounts.findIndex((a: any) => a.id === id)
+            const updatedAccount = {
+              id,
+              provider: 'github' as const,
+              user,
+              avatar,
+              lastUsedAt: now,
+            }
+            if (existingIndex >= 0) {
+              accounts[existingIndex] = updatedAccount
+            } else {
+              accounts.push(updatedAccount)
+            }
+            authStore.set({ provider: 'github', user, avatar, accounts, activeAccountId: id })
+            resolve({ success: true, user, avatar })
+          } catch {
+            const fallbackUser = 'GitHub User'
+            const id = `github:${fallbackUser}`
+            const now = new Date().toISOString()
+            const current = authStore.get()
+            const accounts = current.accounts || []
+            const existingIndex = accounts.findIndex((a: any) => a.id === id)
+            const updatedAccount = {
+              id,
+              provider: 'github' as const,
+              user: fallbackUser,
+              avatar: '',
+              lastUsedAt: now,
+            }
+            if (existingIndex >= 0) {
+              accounts[existingIndex] = updatedAccount
+            } else {
+              accounts.push(updatedAccount)
+            }
+            authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
+            resolve({ success: true, user: fallbackUser, avatar: '' })
+          }
+        } else {
+          resolve({ success: false, error: 'Authentication failed or was cancelled' })
+        }
+      })
+
+      child.on('error', (err: Error) => {
+        if (resolved) return
+        resolved = true
+        resolve({ success: false, error: err.message })
+      })
+
+      setTimeout(() => {
+        if (resolved) return
+        resolved = true
+        child.kill()
+        resolve({ success: false, error: 'Authentication timed out' })
+      }, 300000)
+    })
+  })
+
   ipcMain.handle('git:gitlabLogin', async (event) => {
     const { authStore } = await import('./auth-store')
 
@@ -1858,7 +2193,24 @@ export function registerIpcHandlers() {
         const { stdout: avatarOut } = await execAsync('glab api user --jq ".avatar_url"', { timeout: 10000 })
         const user = userOut.trim()
         const avatar = avatarOut.trim()
-        authStore.set({ provider: 'gitlab', user, avatar })
+        const id = `gitlab:${user}`
+        const now = new Date().toISOString()
+        const current = authStore.get()
+        const accounts = current.accounts || []
+        const existingIndex = accounts.findIndex((a: any) => a.id === id)
+        const updatedAccount = {
+          id,
+          provider: 'gitlab' as const,
+          user,
+          avatar,
+          lastUsedAt: now,
+        }
+        if (existingIndex >= 0) {
+          accounts[existingIndex] = updatedAccount
+        } else {
+          accounts.push(updatedAccount)
+        }
+        authStore.set({ provider: 'gitlab', user, avatar, accounts, activeAccountId: id })
         return { success: true, user, avatar }
       } catch {
         // glab api may not support --jq, try raw
@@ -1867,25 +2219,66 @@ export function registerIpcHandlers() {
           const data = JSON.parse(rawOut)
           const user = data.username || 'GitLab User'
           const avatar = data.avatar_url || ''
-          authStore.set({ provider: 'gitlab', user, avatar })
+          const id = `gitlab:${user}`
+          const now = new Date().toISOString()
+          const current = authStore.get()
+          const accounts = current.accounts || []
+          const existingIndex = accounts.findIndex((a: any) => a.id === id)
+          const updatedAccount = {
+            id,
+            provider: 'gitlab' as const,
+            user,
+            avatar,
+            lastUsedAt: now,
+          }
+          if (existingIndex >= 0) {
+            accounts[existingIndex] = updatedAccount
+          } else {
+            accounts.push(updatedAccount)
+          }
+          authStore.set({ provider: 'gitlab', user, avatar, accounts, activeAccountId: id })
           return { success: true, user, avatar }
         } catch {
-          authStore.set({ provider: 'gitlab', user: 'GitLab User', avatar: '' })
-          return { success: true, user: 'GitLab User', avatar: '' }
+          const fallbackUser = 'GitLab User'
+          const id = `gitlab:${fallbackUser}`
+          const now = new Date().toISOString()
+          const current = authStore.get()
+          const accounts = current.accounts || []
+          const existingIndex = accounts.findIndex((a: any) => a.id === id)
+          const updatedAccount = {
+            id,
+            provider: 'gitlab' as const,
+            user: fallbackUser,
+            avatar: '',
+            lastUsedAt: now,
+          }
+          if (existingIndex >= 0) {
+            accounts[existingIndex] = updatedAccount
+          } else {
+            accounts.push(updatedAccount)
+          }
+          authStore.set({ provider: 'gitlab', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
+          return { success: true, user: fallbackUser, avatar: '' }
         }
       }
     } catch {
       // Not authenticated with glab CLI — check if we have saved GitLab auth from before
       const savedAuth = authStore.get()
-      if ((savedAuth.provider === 'gitlab' || savedAuth.provider === 'gitlab-self-hosted') && savedAuth.user) {
-        // User was previously logged in with GitLab - return saved account
+      const accounts = savedAuth.accounts || []
+      const gitlabAccounts = accounts.filter((a: any) => a.provider === 'gitlab' || a.provider === 'gitlab-self-hosted')
+      if (gitlabAccounts.length > 0) {
+        // Return list of saved GitLab accounts for selection
         return {
           success: true,
-          user: savedAuth.user,
-          avatar: savedAuth.avatar,
           savedAccount: true,
-          isSelfHosted: savedAuth.provider === 'gitlab-self-hosted',
-          gitlabUrl: savedAuth.gitlabUrl,
+          multipleAccounts: true,
+          accounts: gitlabAccounts.map((a: any) => ({
+            id: a.id,
+            user: a.user,
+            avatar: a.avatar,
+            gitlabUrl: a.gitlabUrl,
+            isSelfHosted: a.provider === 'gitlab-self-hosted',
+          })),
         }
       }
       // No previous GitLab auth - proceed with login flow
@@ -1986,16 +2379,78 @@ export function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('git:saveAuth', async (_, data: { provider: string; user: string; avatar: string }) => {
-    try {
-      const { authStore } = await import('./auth-store')
-      authStore.set(data)
-      return { success: true }
-    } catch (error: any) {
-      log.error('git:saveAuth error:', error)
-      return { success: false, error: error.message }
-    }
-  })
+  ipcMain.handle(
+    'git:saveAuth',
+    async (
+      _,
+      data: {
+        provider: string
+        user: string
+        avatar: string
+        gitlabUrl?: string
+      },
+    ) => {
+      try {
+        const { authStore } = await import('./auth-store')
+        const current = authStore.get()
+        const accounts = current.accounts || []
+
+        if (data.provider === 'github') {
+          const id = `github:${data.user}`
+          const now = new Date().toISOString()
+          const existingIndex = accounts.findIndex((a: any) => a.id === id)
+          const updatedAccount = {
+            id,
+            provider: 'github' as const,
+            user: data.user,
+            avatar: data.avatar,
+            lastUsedAt: now,
+          }
+          if (existingIndex >= 0) {
+            accounts[existingIndex] = updatedAccount
+          } else {
+            accounts.push(updatedAccount)
+          }
+          authStore.set({ ...data, accounts, activeAccountId: id })
+        } else if (data.provider === 'gitlab' || data.provider === 'gitlab-self-hosted') {
+          const idPrefix = data.provider === 'gitlab' ? 'gitlab' : 'gitlab-self-hosted'
+          const id = `${idPrefix}:${data.user}${data.gitlabUrl ? `@${data.gitlabUrl}` : ''}`
+          const now = new Date().toISOString()
+          const existingIndex = accounts.findIndex((a: any) => a.id === id)
+          const updatedAccount = {
+            id,
+            provider: data.provider as 'gitlab' | 'gitlab-self-hosted',
+            user: data.user,
+            avatar: data.avatar,
+            gitlabUrl: data.gitlabUrl,
+            lastUsedAt: now,
+          }
+          if (existingIndex >= 0) {
+            accounts[existingIndex] = updatedAccount
+          } else {
+            accounts.push(updatedAccount)
+          }
+
+          authStore.set({
+            ...data,
+            accounts,
+            activeAccountId: id,
+            lastSelfHostedGitlab:
+              data.provider === 'gitlab-self-hosted' && data.gitlabUrl
+                ? { user: data.user, avatar: data.avatar, gitlabUrl: data.gitlabUrl }
+                : current.lastSelfHostedGitlab,
+          })
+        } else {
+          authStore.set(data)
+        }
+
+        return { success: true }
+      } catch (error: any) {
+        log.error('git:saveAuth error:', error)
+        return { success: false, error: error.message }
+      }
+    },
+  )
 
   log.info('✅ IPC handlers registered with real Nexwork CLI')
 }

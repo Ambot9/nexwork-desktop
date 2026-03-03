@@ -6,6 +6,7 @@ export interface Feature {
   startedAt?: string
   completedAt?: string
   expiresAt?: string
+  ownerAccountId?: string
   stats?: {
     totalCommits?: number
     filesChanged?: number

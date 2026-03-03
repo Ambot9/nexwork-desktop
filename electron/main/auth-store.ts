@@ -8,16 +8,32 @@ import fs from 'fs'
  * git auth survives app restarts.
  */
 
-interface AuthData {
-  provider: string // 'github' | 'gitlab' | 'gitlab-self-hosted' | 'local' | ''
+export interface AuthAccount {
+  id: string
+  provider: 'github' | 'gitlab' | 'gitlab-self-hosted'
   user: string
   avatar: string
-  gitlabUrl?: string // For self-hosted GitLab
+  gitlabUrl?: string
+  lastUsedAt: string
+}
+
+export interface AuthData {
+  provider: string // active provider: 'github' | 'gitlab' | 'gitlab-self-hosted' | 'local' | ''
+  user: string
+  avatar: string
+  gitlabUrl?: string // For active self-hosted GitLab session
+  lastSelfHostedGitlab?: {
+    user: string
+    avatar: string
+    gitlabUrl: string
+  }
+  accounts?: AuthAccount[]
+  activeAccountId?: string
 }
 
 const AUTH_FILE = path.join(app.getPath('userData'), 'nexwork-auth.json')
 
-const DEFAULTS: AuthData = { provider: '', user: '', avatar: '' }
+const DEFAULTS: AuthData = { provider: '', user: '', avatar: '', accounts: [], activeAccountId: '' }
 
 function read(): AuthData {
   try {
@@ -46,6 +62,13 @@ export const authStore = {
   },
 
   clear(): void {
-    write({ ...DEFAULTS })
+    const current = read()
+    // Keep accounts and lastSelfHostedGitlab so users do not need to re-enter details
+    write({
+      ...DEFAULTS,
+      accounts: current.accounts || [],
+      lastSelfHostedGitlab: current.lastSelfHostedGitlab,
+      activeAccountId: '',
+    })
   },
 }
