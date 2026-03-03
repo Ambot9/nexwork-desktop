@@ -1877,9 +1877,16 @@ export function registerIpcHandlers() {
     } catch {
       // Not authenticated with glab CLI — check if we have saved GitLab auth from before
       const savedAuth = authStore.get()
-      if (savedAuth.provider === 'gitlab' && savedAuth.user) {
+      if ((savedAuth.provider === 'gitlab' || savedAuth.provider === 'gitlab-self-hosted') && savedAuth.user) {
         // User was previously logged in with GitLab - return saved account
-        return { success: true, user: savedAuth.user, avatar: savedAuth.avatar, savedAccount: true }
+        return {
+          success: true,
+          user: savedAuth.user,
+          avatar: savedAuth.avatar,
+          savedAccount: true,
+          isSelfHosted: savedAuth.provider === 'gitlab-self-hosted',
+          gitlabUrl: savedAuth.gitlabUrl,
+        }
       }
       // No previous GitLab auth - proceed with login flow
     }

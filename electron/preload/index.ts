@@ -216,11 +216,14 @@ declare global {
           error?: string
           alreadyLoggedIn?: boolean
           savedAccount?: boolean
+          isSelfHosted?: boolean
+          gitlabUrl?: string
         }>
         saveAuth: (data: {
           provider: string
           user: string
           avatar: string
+          gitlabUrl?: string
         }) => Promise<{ success: boolean; error?: string }>
         onAuthCode: (callback: (code: string) => void) => () => void
         logout: () => Promise<{ success: boolean; error?: string }>

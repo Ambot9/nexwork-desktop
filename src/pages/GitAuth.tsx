@@ -48,8 +48,8 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
     cleanupRef.current = null
   }
 
-  const saveAndFinish = async (provider: string, user: string, avatar: string) => {
-    await window.nexworkAPI.gitAuth.saveAuth({ provider, user, avatar })
+  const saveAndFinish = async (provider: string, user: string, avatar: string, gitlabUrl?: string) => {
+    await window.nexworkAPI.gitAuth.saveAuth({ provider, user, avatar, gitlabUrl: gitlabUrl || '' })
     message.success(`Connected as ${user}`)
     onAuthenticated({ provider, user, avatar })
   }
@@ -95,9 +95,14 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
       if (result.success) {
         // If already logged in or saved account, use it
         if (result.alreadyLoggedIn || result.savedAccount) {
-          await saveAndFinish('gitlab', result.user || 'GitLab User', result.avatar || '')
+          const provider = result.isSelfHosted ? 'gitlab-self-hosted' : 'gitlab'
+          await saveAndFinish(provider, result.user || 'GitLab User', result.avatar || '')
           if (result.savedAccount) {
-            message.info(`Using saved account: ${result.user}`)
+            if (result.isSelfHosted && result.gitlabUrl) {
+              message.info(`Using saved self-hosted account: ${result.user} (${result.gitlabUrl})`)
+            } else {
+              message.info(`Using saved account: ${result.user}`)
+            }
           }
           return
         }
@@ -134,6 +139,7 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
     }
     const baseUrl =
       gitlabStep === 'self-hosted' && gitlabUrl.trim() ? gitlabUrl.trim().replace(/\/+$/, '') : 'https://gitlab.com'
+    const isSelfHosted = gitlabStep === 'self-hosted' && gitlabUrl.trim() !== ''
     setLoading('gitlab')
     try {
       const result = await window.nexworkAPI.runCommand(
@@ -154,7 +160,13 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
         message.error('Invalid token — check scopes and try again')
         return
       }
-      await saveAndFinish('gitlab', userData.username || 'GitLab User', userData.avatar_url || '')
+      const provider = isSelfHosted ? 'gitlab-self-hosted' : 'gitlab'
+      await saveAndFinish(
+        provider,
+        userData.username || 'GitLab User',
+        userData.avatar_url || '',
+        isSelfHosted ? baseUrl : undefined,
+      )
     } catch (error: any) {
       message.error(error.message || 'GitLab login failed')
     } finally {

@@ -9,9 +9,10 @@ import fs from 'fs'
  */
 
 interface AuthData {
-  provider: string // 'github' | 'gitlab' | 'local' | ''
+  provider: string // 'github' | 'gitlab' | 'gitlab-self-hosted' | 'local' | ''
   user: string
   avatar: string
+  gitlabUrl?: string // For self-hosted GitLab
 }
 
 const AUTH_FILE = path.join(app.getPath('userData'), 'nexwork-auth.json')
