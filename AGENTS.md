@@ -5,7 +5,7 @@
 Electron desktop app for multi-repository feature management. Manages git worktrees, branches, and feature lifecycles across multiple repos in a workspace.
 
 **Stack**: Electron 28 + React 18 + TypeScript 5.3 + Vite 5 + Ant Design 5
-**Storage**: electron-store (settings), better-sqlite3 (features/activity), filesystem (git config)
+**Storage**: JSON file (settings), better-sqlite3 (features/activity), filesystem (git config)
 
 ## Build & Run Commands
 
@@ -43,8 +43,8 @@ npm run postinstall        # electron-builder install-app-deps
 electron/
   main/
     index.ts            # App lifecycle, window creation, auto-cleanup service
-    ipc-handlers.ts    # All IPC handlers (~2000 lines) - the core backend
-    storage.ts          # StorageService: electron-store + SQLite singleton
+    ipc-handlers.ts     # All IPC handlers (~2000 lines) - the core backend
+    storage.ts          # StorageService: JSON settings + SQLite singleton
     security.ts         # Input validation, sanitization, rate limiting
     notifications.ts    # Native OS notifications
     tray.ts             # System tray menu
@@ -61,7 +61,7 @@ src/                    # React renderer process
     ChangesViewer.tsx        # Git diff viewer
     AITerminal.tsx           # AI-powered terminal
   pages/
-    Settings.tsx        # Settings form with electron-store persistence
+    Settings.tsx        # Settings form with JSON settings persistence
     GitAuth.tsx         # GitHub/GitLab authentication UI
     ActivityLog.tsx     # Activity history
   services/
@@ -135,8 +135,8 @@ All renderer-to-main communication uses `window.nexworkAPI` (exposed via preload
 5. Expired features auto-cleaned (hourly check)
 
 ### Storage Persistence
-- **Settings** saved to electron-store AND localStorage (dual-write for reliability)
-- **Workspace path** saved as `lastWorkspace` setting, restored on startup via `setWorkspaceOnStartup()`
+- **Settings** saved to JSON file (`nexwork-settings.json`) in `app.getPath('userData')`
+- **Workspace path** saved as `lastWorkspace` and `perAccountWorkspaces[accountId]`, restored on startup via `config:load`
 - **Features** stored in `.multi-repo-config.json` in workspace root
 - **Activity/stats** in SQLite at `~/.config/Nexwork/nexwork-data.db`
 
