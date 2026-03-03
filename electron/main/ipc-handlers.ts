@@ -1747,31 +1747,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:githubLogin', async (event) => {
     const { authStore } = await import('./auth-store')
 
-    // First check if already authenticated
-    try {
-      await execAsync('gh auth status', { timeout: 10000 })
-      // Already authenticated — just grab user info
-      try {
-        const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
-        const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
-        const user = userOut.trim()
-        const avatar = avatarOut.trim()
-        authStore.set({ provider: 'github', user, avatar })
-        return { success: true, user, avatar }
-      } catch {
-        authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
-        return { success: true, user: 'GitHub User', avatar: '' }
-      }
-    } catch {
-      // Not authenticated — proceed with login flow
-    }
-
-    // Check if gh is installed
+    // Check if gh is installed FIRST
     try {
       await execAsync('which gh', { timeout: 5000 })
     } catch {
       return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
     }
+
+    // Clear existing auth store to allow fresh login
+    authStore.clear()
 
     const { spawn } = require('child_process')
 
@@ -1947,6 +1931,17 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:logout', async () => {
     try {
       const { authStore } = await import('./auth-store')
+      const currentAuth = authStore.get()
+
+      // If logged in with GitHub, also logout from gh CLI
+      if (currentAuth.provider === 'github') {
+        try {
+          await execAsync('gh auth logout --yes', { timeout: 10000 })
+        } catch {
+          // Ignore errors - gh might not be authenticated
+        }
+      }
+
       authStore.clear()
       return { success: true }
     } catch (error: any) {
