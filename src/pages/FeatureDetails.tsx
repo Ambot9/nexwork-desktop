@@ -89,6 +89,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       checkFeatureWorkspace()
     }, 5000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureName])
 
   useEffect(() => {
@@ -97,6 +98,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const interval = setInterval(() => loadCurrentBranches(), 3000)
       return () => clearInterval(interval)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gitModalOpen, feature])
 
   const loadFeatureDetails = async (silent = false) => {

@@ -10,14 +10,14 @@ interface Props {
 }
 
 export function ConflictViewer({ ctx }: Props) {
-  const { conflictInfo, preferredIDE, handleOpenInIDE, handleAbortMerge, handleMarkResolved } = ctx
+  const { conflictInfo, preferredIDE, handleAbortMerge, handleMarkResolved } = ctx
 
   if (!conflictInfo) return null
 
   const { projectName, files, workingDir } = conflictInfo
 
-  const handleOpenFileInIDE = async (filePath: string) => {
-    const fullPath = `${workingDir}/${filePath}`
+  const handleOpenFileInIDE = async (_filePath: string) => {
+    const _fullPath = `${workingDir}/${_filePath}`
     await window.nexworkAPI.openInIDE(workingDir, preferredIDE || 'vscode')
   }
 

@@ -120,8 +120,10 @@ class StorageService {
         CREATE INDEX IF NOT EXISTS idx_activity_feature ON activity_log(featureName);
       `)
 
+      // eslint-disable-next-line no-console
       console.log('✅ Database initialized at:', this.dbPath)
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('❌ Failed to initialize database:', error)
     }
   }

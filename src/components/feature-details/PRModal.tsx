@@ -36,6 +36,7 @@ export function PRModal({ ctx }: Props) {
       setSelectedProjects([])
       checkGhCli()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prModalOpen])
 
   const checkGhCli = async () => {

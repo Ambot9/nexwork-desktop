@@ -1,4 +1,4 @@
-import { Button, Space, Tooltip, Dropdown } from 'antd'
+import { Button, Tooltip, Dropdown } from 'antd'
 import {
   GitPullRequest,
   RefreshCw,

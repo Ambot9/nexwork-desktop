@@ -1780,12 +1780,12 @@ export function registerIpcHandlers() {
         env: { ...process.env },
       })
 
-      let output = ''
+      let _output = ''
       let resolved = false
 
       const handleData = (data: Buffer) => {
         const text = data.toString()
-        output += text
+        _output += text
 
         // Extract and send one-time code to renderer
         const codeMatch = text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i)
@@ -1885,12 +1885,12 @@ export function registerIpcHandlers() {
         env: { ...process.env },
       })
 
-      let output = ''
+      let _output = ''
       let resolved = false
 
       const handleData = (data: Buffer) => {
         const text = data.toString()
-        output += text
+        _output += text
 
         // Extract and send one-time code to renderer
         const codeMatch =

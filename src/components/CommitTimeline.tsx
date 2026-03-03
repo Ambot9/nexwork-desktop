@@ -54,6 +54,7 @@ function CommitTimeline({ featureName, projects }: CommitTimelineProps) {
       await Promise.all(promises)
     }
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Poll every 5s (silent)
@@ -65,6 +66,7 @@ function CommitTimeline({ featureName, projects }: CommitTimelineProps) {
 
     const intervalId = setInterval(poll, 5000)
     return () => clearInterval(intervalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureName])
 
   const loadCommits = async (projectName: string, silent: boolean) => {

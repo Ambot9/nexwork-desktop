@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Card, Input, Space, Button, Typography, List, Tag, Collapse, message, Spin } from 'antd'
-import { Terminal, Send, Bot, Trash2, Maximize2, Minimize2, Loader } from 'lucide-react'
+import { Card, Input, Space, Button, Typography, Tag, Collapse, message, Spin } from 'antd'
+import { Terminal, Send, Bot, Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import type { Feature } from '../types'
 import { createAIService, type AIService, type AIContext } from '../services/ai-service'
 
 const { Text } = Typography
-const { Panel } = Collapse
+const { Panel: _Panel } = Collapse
 
 interface AITerminalProps {
   feature: Feature

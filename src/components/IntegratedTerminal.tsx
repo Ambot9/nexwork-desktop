@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, Tabs, Button, Space, Dropdown, Typography } from 'antd'
-import { Plus, ChevronDown, Terminal as TerminalIcon, X } from 'lucide-react'
+import { Plus, ChevronDown, Terminal as TerminalIcon } from 'lucide-react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import type { Feature } from '../types'
 
-const { Text } = Typography
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _Text = Typography
 
 interface IntegratedTerminalProps {
   feature: Feature
@@ -40,7 +41,7 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
     return () => {
       // Only cleanup if we're actually unmounting (not just React Strict Mode remount)
       setTimeout(() => {
-        tabs.forEach(tab => {
+        tabs.forEach((tab) => {
           if (tab.pid) {
             window.nexworkAPI.terminal?.kill(tab.pid)
           }
@@ -48,14 +49,15 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
         })
       }, 100)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const createNewTerminal = async (customCwd?: string) => {
     const terminalId = `terminal-${nextTerminalId.current++}`
-    
+
     // Determine working directory
     let cwd = customCwd || workspaceRoot
-    
+
     // If no custom directory, try to detect feature folder
     if (!customCwd && feature.projects.length > 0) {
       try {
@@ -64,13 +66,12 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
         // Feature name might have underscores, but folder might have hyphens
         const featureName = feature.name.replace(/_/g, '-')
         const featureFolderPattern = `${workspaceRoot}/features/*${featureName}*`
-        
+
         const globResult = await window.nexworkAPI.runCommand(
           `ls -d ${featureFolderPattern} 2>/dev/null`,
-          workspaceRoot
+          workspaceRoot,
         )
-        
-        
+
         let featureFolderFound = false
         if (globResult.success && globResult.output && globResult.output.trim()) {
           const detectedPath = globResult.output.trim().split('\n')[0]
@@ -80,65 +81,62 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
             featureFolderFound = true
           }
         }
-        
+
         // Only check other methods if features folder wasn't found
         if (!featureFolderFound) {
-          
           const config = await window.nexworkAPI.config.load()
           const firstProject = feature.projects[0]
-          
+
           if (firstProject.worktreePath) {
-          // Fallback to stored worktree path
-          cwd = firstProject.worktreePath
-        } else {
+            // Fallback to stored worktree path
+            cwd = firstProject.worktreePath
+          } else {
             // Not found in features folder, try to detect worktree dynamically
             const projectConfig = config.projects.find((p: any) => p.name === firstProject.name)
-          if (projectConfig) {
-            const projectPath = `${workspaceRoot}/${projectConfig.path}`
-            
-            // Check if worktree exists for this branch
-            const worktreeListResult = await window.nexworkAPI.runCommand('git worktree list', projectPath)
-            
-            if (worktreeListResult.success) {
-              
-              // Look for worktree directory (not the main repo)
-              const worktreeLines = worktreeListResult.output.split('\n').filter(Boolean)
-              
-              // First, prefer worktrees in the features/ folder
-              let worktreeLine = worktreeLines.find(line => 
-                line.includes(firstProject.branch) && 
-                line.includes('/features/') &&
-                !line.startsWith(projectPath)
-              )
-              
-              // If not found in features/, look for any worktree
-              if (!worktreeLine) {
-                worktreeLine = worktreeLines.find(line => 
-                  line.includes(firstProject.branch) && !line.startsWith(projectPath)
+            if (projectConfig) {
+              const projectPath = `${workspaceRoot}/${projectConfig.path}`
+
+              // Check if worktree exists for this branch
+              const worktreeListResult = await window.nexworkAPI.runCommand('git worktree list', projectPath)
+
+              if (worktreeListResult.success) {
+                // Look for worktree directory (not the main repo)
+                const worktreeLines = worktreeListResult.output.split('\n').filter(Boolean)
+
+                // First, prefer worktrees in the features/ folder
+                let worktreeLine = worktreeLines.find(
+                  (line) =>
+                    line.includes(firstProject.branch) && line.includes('/features/') && !line.startsWith(projectPath),
                 )
-              }
-              
-              if (worktreeLine) {
-                // Extract worktree path (first part before whitespace)
-                const detectedWorktreePath = worktreeLine.trim().split(/\s+/)[0]
-                cwd = detectedWorktreePath
+
+                // If not found in features/, look for any worktree
+                if (!worktreeLine) {
+                  worktreeLine = worktreeLines.find(
+                    (line) => line.includes(firstProject.branch) && !line.startsWith(projectPath),
+                  )
+                }
+
+                if (worktreeLine) {
+                  // Extract worktree path (first part before whitespace)
+                  const detectedWorktreePath = worktreeLine.trim().split(/\s+/)[0]
+                  cwd = detectedWorktreePath
+                } else {
+                  // No separate worktree, use main project directory
+                  cwd = projectPath
+                }
               } else {
-                // No separate worktree, use main project directory
+                // Fallback to project path if git command fails
                 cwd = projectPath
+                console.error('Failed to get worktree list:', worktreeListResult.error)
               }
-            } else {
-              // Fallback to project path if git command fails
-              cwd = projectPath
-              console.error('Failed to get worktree list:', worktreeListResult.error)
             }
           }
-        }
         }
       } catch (error) {
         console.error('Failed to detect worktree:', error)
       }
     }
-    
+
     // Create xterm instance
     const terminal = new Terminal({
       cursorBlink: true,
@@ -171,12 +169,12 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
       allowProposedApi: true,
       convertEol: true,
       rows: 24,
-      cols: 80
+      cols: 80,
     })
 
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon()
-    
+
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)
 
@@ -184,10 +182,10 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
       id: terminalId,
       label: `Terminal ${tabs.length + 1}`, // Use actual tab count instead of incrementing counter
       terminal,
-      fitAddon
+      fitAddon,
     }
 
-    setTabs(prev => [...prev, newTab])
+    setTabs((prev) => [...prev, newTab])
     setActiveTabId(terminalId)
 
     // Wait for next tick to ensure DOM is ready
@@ -196,7 +194,7 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
       if (container) {
         terminal.open(container)
         fitAddon.fit()
-        
+
         // Initialize PTY with determined working directory
         initializePTY(terminalId, terminal, cwd)
       }
@@ -205,28 +203,24 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
 
   const initializePTY = async (terminalId: string, terminal: Terminal, cwd: string) => {
     try {
-      
       if (!window.nexworkAPI.terminal) {
         throw new Error('Terminal API not available')
       }
-      
+
       // Create PTY process
       const result = await window.nexworkAPI.terminal.create({
         cols: terminal.cols,
         rows: terminal.rows,
-        cwd: cwd
+        cwd: cwd,
       })
 
-      
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to create terminal')
       }
 
       if (result?.pid) {
         // Update tab with PID
-        setTabs(prev => prev.map(tab => 
-          tab.id === terminalId ? { ...tab, pid: result.pid } : tab
-        ))
+        setTabs((prev) => prev.map((tab) => (tab.id === terminalId ? { ...tab, pid: result.pid } : tab)))
 
         // Handle terminal output
         window.nexworkAPI.terminal?.onData(result.pid, (data: string) => {
@@ -257,8 +251,8 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
 
   const closeTab = (tabId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    
-    const tab = tabs.find(t => t.id === tabId)
+
+    const tab = tabs.find((t) => t.id === tabId)
     if (tab) {
       // Kill PTY process
       if (tab.pid) {
@@ -268,35 +262,35 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
       tab.terminal.dispose()
     }
 
-    setTabs(prev => {
-      const newTabs = prev.filter(t => t.id !== tabId)
-      
+    setTabs((prev) => {
+      const newTabs = prev.filter((t) => t.id !== tabId)
+
       // Renumber remaining terminals to fill gaps
       const renumberedTabs = newTabs.map((tab, index) => ({
         ...tab,
-        label: `Terminal ${index + 1}`
+        label: `Terminal ${index + 1}`,
       }))
-      
+
       // If closing active tab, switch to another
       if (activeTabId === tabId && renumberedTabs.length > 0) {
         setActiveTabId(renumberedTabs[0].id)
       }
-      
+
       // If no tabs left, create a new one
       if (renumberedTabs.length === 0) {
         setTimeout(createNewTerminal, 100)
       }
-      
+
       return renumberedTabs
     })
   }
 
   const handleTabChange = (tabId: string) => {
     setActiveTabId(tabId)
-    
+
     // Fit terminal when switching tabs
     setTimeout(() => {
-      const tab = tabs.find(t => t.id === tabId)
+      const tab = tabs.find((t) => t.id === tabId)
       if (tab) {
         tab.fitAddon.fit()
         tab.terminal.focus()
@@ -307,7 +301,7 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
   // Fit terminals on window resize
   useEffect(() => {
     const handleResize = () => {
-      tabs.forEach(tab => {
+      tabs.forEach((tab) => {
         if (tab.id === activeTabId) {
           tab.fitAddon.fit()
         }
@@ -318,7 +312,7 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
     return () => window.removeEventListener('resize', handleResize)
   }, [tabs, activeTabId])
 
-  const items = tabs.map(tab => ({
+  const items = tabs.map((tab) => ({
     key: tab.id,
     label: (
       <Space>
@@ -335,17 +329,14 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
           width: '100%',
           padding: '8px',
           backgroundColor: '#ffffff',
-          overflow: 'hidden'
+          overflow: 'hidden',
         }}
       />
-    )
+    ),
   }))
 
   return (
-    <Card
-      style={{ marginTop: 16 }}
-      styles={{ body: { padding: 0 } }}
-    >
+    <Card style={{ marginTop: 16 }} styles={{ body: { padding: 0 } }}>
       <Tabs
         activeKey={activeTabId}
         onChange={handleTabChange}
@@ -367,14 +358,14 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
                     key: 'new-terminal',
                     label: 'New Terminal (Default)',
                     icon: <Plus size={14} />,
-                    onClick: () => createNewTerminal()
+                    onClick: () => createNewTerminal(),
                   },
                   {
                     key: 'new-workspace',
                     label: 'New Terminal (Workspace Root)',
-                    onClick: () => createNewTerminal(workspaceRoot)
+                    onClick: () => createNewTerminal(workspaceRoot),
                   },
-                  ...feature.projects.map(project => ({
+                  ...feature.projects.map((project) => ({
                     key: `project-${project.name}`,
                     label: `New Terminal (${project.name})`,
                     onClick: async () => {
@@ -384,20 +375,15 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
                         const projectPath = project.worktreePath || `${workspaceRoot}/${projectConfig.path}`
                         createNewTerminal(projectPath)
                       }
-                    }
-                  }))
-                ]
+                    },
+                  })),
+                ],
               }}
               trigger={['click']}
             >
-              <Button
-                type="text"
-                size="small"
-                icon={<ChevronDown size={14} />}
-                style={{ marginRight: 8 }}
-              />
+              <Button type="text" size="small" icon={<ChevronDown size={14} />} style={{ marginRight: 8 }} />
             </Dropdown>
-          )
+          ),
         }}
       />
     </Card>

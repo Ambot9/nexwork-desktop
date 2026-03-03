@@ -1,6 +1,32 @@
 import { useState, useEffect } from 'react'
-import { Modal, Steps, Form, Input, Checkbox, Button, Space, Typography, Card, message, Tag, Alert, Tooltip, Select, Spin, DatePicker } from 'antd'
-import { FileText, FolderGit2, Settings, GitBranch, AlertTriangle, CheckCircle, ArrowDown, RefreshCw } from 'lucide-react'
+import {
+  Modal,
+  Steps,
+  Form,
+  Input,
+  Checkbox,
+  Button,
+  Space,
+  Typography,
+  Card,
+  message,
+  Tag,
+  Alert,
+  Tooltip,
+  Select,
+  Spin,
+  DatePicker,
+} from 'antd'
+import {
+  FileText,
+  FolderGit2,
+  Settings,
+  GitBranch,
+  AlertTriangle,
+  CheckCircle,
+  ArrowDown,
+  RefreshCw,
+} from 'lucide-react'
 import type { CreateFeatureDTO } from '../types'
 
 const { Text, Paragraph } = Typography
@@ -23,13 +49,13 @@ const TEMPLATE_PREVIEWS: Record<string, TemplatePreview> = {
   default: {
     name: 'Default',
     description: 'Simple, clean feature documentation with tasks and testing checklist',
-    icon: '📝'
+    icon: '📝',
   },
   jira: {
     name: 'JIRA Style',
     description: 'JIRA-style template with user stories, acceptance criteria, and definition of done',
-    icon: '🎯'
-  }
+    icon: '🎯',
+  },
 }
 
 export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureModalProps) {
@@ -43,13 +69,16 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const [currentBranches, setCurrentBranches] = useState<Record<string, string>>({})
   const [availableBranches, setAvailableBranches] = useState<Record<string, string[]>>({})
   const [selectedBranches, setSelectedBranches] = useState<Record<string, string>>({})
-  const [projectStatus, setProjectStatus] = useState<Record<string, { ahead: number, behind: number, upToDate: boolean, noRemote?: boolean }>>({})
+  const [projectStatus, setProjectStatus] = useState<
+    Record<string, { ahead: number; behind: number; upToDate: boolean; noRemote?: boolean }>
+  >({})
   const [projectStatusLoading, setProjectStatusLoading] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (open) {
       loadData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const loadData = async () => {
@@ -62,14 +91,14 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       // Load templates
       const templates = await window.nexworkAPI.templates.getAll()
       setAvailableTemplates(templates)
-      
+
       // PHASE 1: Load current branches ONLY (fast, no network calls)
       // MUST complete before phase 3 because status check needs branch info
       const branches = await loadProjectBranches(config)
-      
+
       // PHASE 2: Load available branches (background, can run in parallel with phase 3)
       loadAvailableBranches(config)
-      
+
       // PHASE 3: Load sync status (background, parallel)
       // Pass branches directly to avoid timing issues with React state
       loadSyncStatusInBackground(config, branches)
@@ -81,7 +110,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
   const loadProjectBranches = async (config: any) => {
     const branches: Record<string, string> = {}
-    
+
     // Get current branch for each project (fast, local operation)
     const branchPromises = (config.projects || []).map(async (project: any) => {
       try {
@@ -89,53 +118,56 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         const branchResult = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', projectPath)
         const currentBranch = branchResult.success ? branchResult.output.trim() : 'unknown'
         branches[project.name] = currentBranch
-      } catch (error) {
+      } catch {
         branches[project.name] = 'unknown'
       }
     })
-    
+
     await Promise.all(branchPromises)
     setCurrentBranches(branches)
     setSelectedBranches(branches) // Initialize selected branches with current
-    
+
     // Return the branches so they can be used immediately
     return branches
   }
 
   const loadAvailableBranches = async (config: any) => {
     const allBranches: Record<string, string[]> = {}
-    
+
     const branchPromises = (config.projects || []).map(async (project: any) => {
       try {
         const projectPath = `${config.workspaceRoot}/${project.path}`
-        
+
         // Get all branches (local + remote)
         const result = await window.nexworkAPI.runCommand(
           'git branch -a | sed "s/remotes\\/origin\\///" | sed "s/^[* ]*//" | grep -v "HEAD" | sort -u',
-          projectPath
+          projectPath,
         )
-        
+
         if (result.success) {
-          const branches = result.output.trim().split('\n').filter(b => b.trim())
-          
+          const branches = result.output
+            .trim()
+            .split('\n')
+            .filter((b) => b.trim())
+
           // Filter to important branches: production, staging, demo, master, main, develop + recent feature branches
-          const mainBranches = branches.filter(b => 
-            ['production', 'staging', 'demo', 'master', 'main', 'develop'].includes(b.trim().toLowerCase())
+          const mainBranches = branches.filter((b) =>
+            ['production', 'staging', 'demo', 'master', 'main', 'develop'].includes(b.trim().toLowerCase()),
           )
-          
-          const featureBranches = branches.filter(b => 
-            b.toLowerCase().includes('feature') || b.toLowerCase().includes('feat')
-          ).slice(0, 5) // Only recent 5
-          
+
+          const featureBranches = branches
+            .filter((b) => b.toLowerCase().includes('feature') || b.toLowerCase().includes('feat'))
+            .slice(0, 5) // Only recent 5
+
           allBranches[project.name] = [...new Set([...mainBranches, ...featureBranches])]
         } else {
           allBranches[project.name] = []
         }
-      } catch (error) {
+      } catch {
         allBranches[project.name] = []
       }
     })
-    
+
     await Promise.all(branchPromises)
     setAvailableBranches(allBranches)
   }
@@ -145,123 +177,120 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     const statusPromises = (config.projects || []).map(async (project: any) => {
       await checkProjectStatus(project.name, config, branches)
     })
-    
+
     await Promise.all(statusPromises)
   }
 
   const checkProjectStatus = async (projectName: string, config?: any, branches?: Record<string, string>) => {
     // Set timeout to clear loading state after 30 seconds max
     const timeoutId = setTimeout(() => {
+      // eslint-disable-next-line no-console
       console.warn(`Status check timeout for ${projectName}`)
-      setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+      setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
     }, 30000)
-    
+
     try {
       // Set loading state
-      setProjectStatusLoading(prev => ({ ...prev, [projectName]: true }))
-      
+      setProjectStatusLoading((prev) => ({ ...prev, [projectName]: true }))
+
       if (!config) {
         config = await window.nexworkAPI.config.load()
       }
-      
+
       const project = config.projects.find((p: any) => p.name === projectName)
       if (!project) {
+        // eslint-disable-next-line no-console
         console.warn(`Project ${projectName} not found in config`)
-        setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+        setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
         return
       }
-      
+
       const projectPath = `${config.workspaceRoot}/${project.path}`
-      
+
       // Use passed branches if available (for initial load), otherwise use state
       const branchToCheck = branches?.[projectName] || selectedBranches[projectName] || currentBranches[projectName]
-      
-      
+
       if (!branchToCheck || branchToCheck === 'unknown') {
+        // eslint-disable-next-line no-console
         console.warn(`Branch unknown for ${projectName}`)
-        setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+        setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
         return
       }
-      
+
       // Fetch latest from remote (with timeout)
       const fetchResult = await window.nexworkAPI.runCommand('git fetch --quiet --no-progress', projectPath)
       if (!fetchResult.success) {
         console.error(`Failed to fetch for ${projectName}:`, fetchResult.error)
       }
-      
+
       // First check if the remote branch exists
       const remoteBranchCheck = await window.nexworkAPI.runCommand(
         `git rev-parse --verify origin/${branchToCheck}`,
-        projectPath
+        projectPath,
       )
-      
+
       if (!remoteBranchCheck.success) {
         // Remote branch doesn't exist - this is a local-only branch
-        setProjectStatus(prev => ({
+        setProjectStatus((prev) => ({
           ...prev,
           [projectName]: {
             ahead: 0,
             behind: 0,
             upToDate: true,
-            noRemote: true
-          }
+            noRemote: true,
+          },
         }))
-        setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+        setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
         return
       }
-      
+
       // Get the local branch hash (if it exists locally)
       const localBranchCheck = await window.nexworkAPI.runCommand(
         `git rev-parse --verify ${branchToCheck} 2>/dev/null || git rev-parse --verify origin/${branchToCheck}`,
-        projectPath
+        projectPath,
       )
-      
-      
+
       if (!localBranchCheck.success || !localBranchCheck.output.trim()) {
         console.error(`Failed to get local branch for ${projectName}:`, localBranchCheck.error)
-        setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+        setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
         return
       }
-      
+
       const localRef = localBranchCheck.output.trim()
       const remoteRef = remoteBranchCheck.output.trim()
-      
-      
+
       // If local and remote are the same, it's up to date
       if (localRef === remoteRef) {
-        setProjectStatus(prev => ({
+        setProjectStatus((prev) => ({
           ...prev,
           [projectName]: {
             ahead: 0,
             behind: 0,
-            upToDate: true
-          }
+            upToDate: true,
+          },
         }))
-        setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+        setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
         return
       }
-      
+
       // Check ahead/behind count between local and remote refs of the selected branch
       const statusResult = await window.nexworkAPI.runCommand(
         `git rev-list --left-right --count ${localRef}...${remoteRef}`,
-        projectPath
+        projectPath,
       )
-      
-      
-      
+
       if (statusResult.success) {
         const parts = statusResult.output.trim().split(/\s+/)
         const ahead = parseInt(parts[0]) || 0
         const behind = parseInt(parts[1]) || 0
-        
-        
-        setProjectStatus(prev => ({
+
+        setProjectStatus((prev) => ({
           ...prev,
           [projectName]: {
             ahead,
             behind,
-            upToDate: behind === 0
-          }
+            upToDate: behind === 0,
+          },
         }))
       } else {
         console.error(`Failed to get status for ${projectName}:`, statusResult.error)
@@ -270,21 +299,21 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       console.error(`Failed to check status for ${projectName}:`, error)
     } finally {
       clearTimeout(timeoutId)
-      setProjectStatusLoading(prev => ({ ...prev, [projectName]: false }))
+      setProjectStatusLoading((prev) => ({ ...prev, [projectName]: false }))
     }
   }
 
   const handleBranchSwitch = async (projectName: string, newBranch: string) => {
     try {
       // Update selected branch
-      setSelectedBranches(prev => ({ ...prev, [projectName]: newBranch }))
-      
+      setSelectedBranches((prev) => ({ ...prev, [projectName]: newBranch }))
+
       // Re-check status for the new branch
       // Pass the new branch directly to avoid race condition with state update
       const config = await window.nexworkAPI.config.load()
       const branchesWithNewSelection = {
         ...selectedBranches,
-        [projectName]: newBranch
+        [projectName]: newBranch,
       }
       await checkProjectStatus(projectName, config, branchesWithNewSelection)
     } catch (error) {
@@ -296,44 +325,56 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const handlePullProject = async (projectName: string) => {
     try {
       message.loading({ content: `Pulling ${projectName}...`, key: `pull-${projectName}`, duration: 0 })
-      
+
       const config = await window.nexworkAPI.config.load()
       const project = config.projects.find((p: any) => p.name === projectName)
-      
+
       if (!project) {
         message.error({ content: `Project ${projectName} not found`, key: `pull-${projectName}` })
         return
       }
-      
+
       const projectPath = `${config.workspaceRoot}/${project.path}`
-      
+
       // Get the selected branch for this project
       const targetBranch = selectedBranches[projectName] || currentBranches[projectName]
-      
+
       // Check current branch
       const branchResult = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', projectPath)
       const currentBranch = branchResult.success ? branchResult.output.trim() : ''
-      
+
       // If not on the target branch, switch to it first
       if (currentBranch !== targetBranch) {
-        message.info({ content: `${projectName}: Switching to ${targetBranch}...`, key: `pull-${projectName}`, duration: 0 })
+        message.info({
+          content: `${projectName}: Switching to ${targetBranch}...`,
+          key: `pull-${projectName}`,
+          duration: 0,
+        })
         const switchResult = await window.nexworkAPI.runCommand(`git checkout ${targetBranch}`, projectPath)
-        
+
         if (!switchResult.success) {
-          message.error({ content: `Failed to switch to ${targetBranch}: ${switchResult.error}`, key: `pull-${projectName}`, duration: 5 })
+          message.error({
+            content: `Failed to switch to ${targetBranch}: ${switchResult.error}`,
+            key: `pull-${projectName}`,
+            duration: 5,
+          })
           return
         }
       }
-      
+
       // Now pull
       const result = await window.nexworkAPI.runCommand('git pull --no-edit', projectPath)
-      
+
       if (result.success) {
         message.success({ content: `${projectName} pulled successfully!`, key: `pull-${projectName}`, duration: 3 })
         // Re-check status after pull
         await checkProjectStatus(projectName, config)
       } else {
-        message.error({ content: `Failed to pull ${projectName}: ${result.error}`, key: `pull-${projectName}`, duration: 5 })
+        message.error({
+          content: `Failed to pull ${projectName}: ${result.error}`,
+          key: `pull-${projectName}`,
+          duration: 5,
+        })
       }
     } catch (error: any) {
       message.error({ content: `Failed to pull: ${error.message}`, key: `pull-${projectName}`, duration: 5 })
@@ -347,28 +388,29 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         await form.validateFields(['featureName', 'customId', 'description'])
       } else if (currentStep === 1) {
         await form.validateFields(['projects'])
-        
+
         // Check if any selected projects are behind remote
         const selectedProjects = form.getFieldValue('projects') || []
         const projectsBehind = selectedProjects.filter((project: string) => {
           const status = projectStatus[project]
           return status && !status.upToDate && !status.noRemote && status.behind > 0
         })
-        
+
         if (projectsBehind.length > 0) {
           message.warning({
             content: `Please pull the following projects first: ${projectsBehind.join(', ')}`,
-            duration: 5
+            duration: 5,
           })
           return // Prevent going to next step
         }
       }
-      
+
       // Log current form values
-      const currentValues = form.getFieldsValue()
-      
+      const _currentValues = form.getFieldsValue()
+
       setCurrentStep(currentStep + 1)
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Validation failed:', error)
     }
   }
@@ -378,36 +420,34 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   }
 
   const handleSubmit = async () => {
-    
     try {
       setLoading(true)
-      
+
       // Get all form fields
-      const allFields = form.getFieldsValue()
-      
+      const _allFields = form.getFieldsValue()
+
       // Validate fields
       let values
       try {
         values = await form.validateFields()
       } catch (validationError) {
+        // eslint-disable-next-line no-console
         console.error('Validation failed:', validationError)
         throw validationError
       }
-      
-      
+
       const dto: CreateFeatureDTO = {
         name: values.featureName,
         id: useCustomId ? values.customId : undefined,
         projects: values.projects as string[],
         template: selectedTemplate,
         selectedBranches: selectedBranches,
-        expiresAt: values.expiresAt ? values.expiresAt.toISOString() : undefined
+        expiresAt: values.expiresAt ? values.expiresAt.toISOString() : undefined,
       }
-      
 
       await window.nexworkAPI.features.create(dto)
       message.success('Feature created successfully!')
-      
+
       // Reset and close
       form.resetFields()
       setCurrentStep(0)
@@ -432,33 +472,38 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const handlePullAll = async () => {
     try {
       message.loading({ content: 'Pulling all projects...', key: 'pull-all', duration: 0 })
-      
+
       const config = await window.nexworkAPI.config.load()
       let successCount = 0
       let failCount = 0
-      
+
       for (const project of config.projects || []) {
         try {
           const projectPath = `${config.workspaceRoot}/${project.path}`
           const result = await window.nexworkAPI.runCommand('git pull --no-edit', projectPath)
-          
+
           if (result.success) {
             successCount++
           } else {
             failCount++
+            // eslint-disable-next-line no-console
             console.error(`Failed to pull ${project.name}:`, result.error)
           }
-        } catch (error) {
+        } catch {
           failCount++
         }
       }
-      
+
       if (failCount === 0) {
         message.success({ content: `All ${successCount} projects pulled successfully!`, key: 'pull-all', duration: 3 })
       } else {
-        message.warning({ content: `Pulled ${successCount} projects, ${failCount} failed`, key: 'pull-all', duration: 5 })
+        message.warning({
+          content: `Pulled ${successCount} projects, ${failCount} failed`,
+          key: 'pull-all',
+          duration: 5,
+        })
       }
-      
+
       // Reload data to refresh status
       await loadData()
     } catch (error: any) {
@@ -477,18 +522,11 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
             name="featureName"
             rules={[{ required: true, message: 'Please enter feature name' }]}
           >
-            <Input
-              size="large"
-              placeholder="e.g., Add Payment Gateway Integration"
-              autoFocus
-            />
+            <Input size="large" placeholder="e.g., Add Payment Gateway Integration" autoFocus />
           </Form.Item>
 
           <Form.Item>
-            <Checkbox
-              checked={useCustomId}
-              onChange={(e) => setUseCustomId(e.target.checked)}
-            >
+            <Checkbox checked={useCustomId} onChange={(e) => setUseCustomId(e.target.checked)}>
               Use custom Feature ID (otherwise auto-generated)
             </Checkbox>
           </Form.Item>
@@ -501,26 +539,16 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                 { required: useCustomId, message: 'Please enter feature ID' },
                 {
                   pattern: /^[A-Z0-9_-]+$/,
-                  message: 'ID can only contain uppercase letters, numbers, hyphens, and underscores'
-                }
+                  message: 'ID can only contain uppercase letters, numbers, hyphens, and underscores',
+                },
               ]}
             >
-              <Input
-                size="large"
-                placeholder="e.g., WPAY-123, JIRA-456"
-                style={{ textTransform: 'uppercase' }}
-              />
+              <Input size="large" placeholder="e.g., WPAY-123, JIRA-456" style={{ textTransform: 'uppercase' }} />
             </Form.Item>
           )}
 
-          <Form.Item
-            label="Description (optional)"
-            name="description"
-          >
-            <TextArea
-              rows={4}
-              placeholder="Brief description of what this feature does..."
-            />
+          <Form.Item label="Description (optional)" name="description">
+            <TextArea rows={4} placeholder="Brief description of what this feature does..." />
           </Form.Item>
 
           <Form.Item
@@ -541,7 +569,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
             />
           </Form.Item>
         </div>
-      )
+      ),
     },
     {
       title: 'Select Projects',
@@ -551,22 +579,17 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
           <Paragraph type="secondary">
             Select which repositories this feature will affect. Worktrees will be created from the current branch.
           </Paragraph>
-          
-          {Object.values(projectStatus).some(s => !s.upToDate) && (
+
+          {Object.values(projectStatus).some((s) => !s.upToDate) && (
             <Alert
               message="Some projects are behind remote"
               description={
                 <Space direction="vertical" size="small">
                   <Text>
-                    {Object.entries(projectStatus).filter(([_, s]) => !s.upToDate).length} project(s) 
-                    need to pull changes. It's recommended to pull before creating a feature.
+                    {Object.entries(projectStatus).filter(([_, s]) => !s.upToDate).length} project(s) need to pull
+                    changes. It's recommended to pull before creating a feature.
                   </Text>
-                  <Button 
-                    type="primary" 
-                    size="small" 
-                    icon={<ArrowDown size={14} />}
-                    onClick={handlePullAll}
-                  >
+                  <Button type="primary" size="small" icon={<ArrowDown size={14} />} onClick={handlePullAll}>
                     Pull All Projects
                   </Button>
                 </Space>
@@ -577,35 +600,39 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
               style={{ marginBottom: 16 }}
             />
           )}
-          
-          <Form.Item
-            name="projects"
-            rules={[{ required: true, message: 'Please select at least one project' }]}
-          >
+
+          <Form.Item name="projects" rules={[{ required: true, message: 'Please select at least one project' }]}>
             <Checkbox.Group style={{ width: '100%' }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 {availableProjects.map((project) => {
                   const status = projectStatus[project]
                   const needsPull = status && !status.upToDate
-                  
+
                   return (
-                    <Card 
-                      key={project} 
+                    <Card
+                      key={project}
                       size="small"
-                      style={{ 
+                      style={{
                         borderColor: needsPull ? '#faad14' : undefined,
                         borderWidth: needsPull ? 2 : 1,
-                        cursor: 'default'
+                        cursor: 'default',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          width: '100%',
+                        }}
+                      >
                         <Checkbox value={project}>
                           <Space>
                             <FolderGit2 size={16} />
                             <Text strong>{project}</Text>
                           </Space>
                         </Checkbox>
-                        
+
                         <Space onClick={(e) => e.stopPropagation()}>
                           {/* Branch Switcher */}
                           {availableBranches[project] && availableBranches[project].length > 0 ? (
@@ -619,7 +646,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                               placeholder="Select branch"
                               popupMatchSelectWidth={200}
                             >
-                              {availableBranches[project].map(branch => (
+                              {availableBranches[project].map((branch) => (
                                 <Select.Option key={branch} value={branch}>
                                   {branch}
                                 </Select.Option>
@@ -633,7 +660,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                               </Space>
                             </Tag>
                           ) : null}
-                          
+
                           {/* Status Badge */}
                           {projectStatusLoading[project] ? (
                             <Tag icon={<Spin size="small" />} color="processing">
@@ -641,9 +668,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                             </Tag>
                           ) : status && status.noRemote ? (
                             <Tooltip title="Local branch only - no remote tracking branch">
-                              <Tag color="default">
-                                Local only
-                              </Tag>
+                              <Tag color="default">Local only</Tag>
                             </Tooltip>
                           ) : status && needsPull ? (
                             <>
@@ -653,9 +678,9 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                                 </Tag>
                               </Tooltip>
                               <Tooltip title="Pull to update">
-                                <Button 
-                                  type="primary" 
-                                  size="small" 
+                                <Button
+                                  type="primary"
+                                  size="small"
                                   icon={<ArrowDown size={12} />}
                                   onClick={() => handlePullProject(project)}
                                 >
@@ -671,9 +696,9 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                             </Tooltip>
                           ) : (
                             <Tooltip title="Click to check status">
-                              <Button 
-                                type="text" 
-                                size="small" 
+                              <Button
+                                type="text"
+                                size="small"
                                 icon={<RefreshCw size={12} />}
                                 onClick={async () => {
                                   const config = await window.nexworkAPI.config.load()
@@ -692,40 +717,36 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
               </Space>
             </Checkbox.Group>
           </Form.Item>
-          
+
           {availableProjects.length === 0 && (
             <Card>
-              <Text type="secondary">
-                No projects found. Please configure your workspace first.
-              </Text>
+              <Text type="secondary">No projects found. Please configure your workspace first.</Text>
             </Card>
           )}
         </div>
-      )
+      ),
     },
     {
       title: 'Choose Template',
       icon: <Settings size={20} />,
       content: (
         <div style={{ marginTop: 24 }}>
-          <Paragraph type="secondary">
-            Select a README template for your feature documentation
-          </Paragraph>
+          <Paragraph type="secondary">Select a README template for your feature documentation</Paragraph>
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             {availableTemplates.map((template) => {
               const preview = TEMPLATE_PREVIEWS[template] || {
                 name: template,
                 description: 'Custom template',
-                icon: '📄'
+                icon: '📄',
               }
-              
+
               return (
                 <Card
                   key={template}
                   hoverable
                   style={{
                     borderColor: selectedTemplate === template ? '#1890ff' : undefined,
-                    borderWidth: selectedTemplate === template ? 2 : 1
+                    borderWidth: selectedTemplate === template ? 2 : 1,
                   }}
                   onClick={() => setSelectedTemplate(template)}
                 >
@@ -744,8 +765,8 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
             })}
           </Space>
         </div>
-      )
-    }
+      ),
+    },
   ]
 
   return (
@@ -771,7 +792,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         form={form}
         layout="vertical"
         initialValues={{
-          template: 'default'
+          template: 'default',
         }}
       >
         {steps.map((step, index) => (
@@ -782,16 +803,11 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       </Form>
 
       <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
-        <Button
-          onClick={handlePrev}
-          disabled={currentStep === 0}
-        >
+        <Button onClick={handlePrev} disabled={currentStep === 0}>
           Previous
         </Button>
         <Space>
-          <Button onClick={handleCancel}>
-            Cancel
-          </Button>
+          <Button onClick={handleCancel}>Cancel</Button>
           {currentStep < steps.length - 1 ? (
             <Button type="primary" onClick={handleNext}>
               Next

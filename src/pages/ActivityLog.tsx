@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Typography, Space, Timeline, Tag, Card, Segmented, Empty, Spin } from 'antd'
-import { GitCommitHorizontal, GitMerge, Plus, Trash2, CheckCircle2, ArrowDown, ArrowUp, Activity } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, ArrowDown, ArrowUp, Activity } from 'lucide-react'
 import type { ActivityRecord } from '../types'
 
 const { Title, Text, Paragraph } = Typography

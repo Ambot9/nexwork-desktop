@@ -78,8 +78,8 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [authUser, setAuthUser] = useState('')
   const [authAvatar, setAuthAvatar] = useState('')
-  const [authProvider, setAuthProvider] = useState('')
-  const [authChecked, setAuthChecked] = useState(false)
+  const [_authProvider, setAuthProvider] = useState('')
+  const [_authChecked, setAuthChecked] = useState(false)
   const {
     token: { colorBgContainer },
   } = theme.useToken()

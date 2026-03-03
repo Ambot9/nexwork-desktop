@@ -207,6 +207,7 @@ class RateLimiter {
     const validRequests = requests.filter((time) => now - time < this.windowMs)
 
     if (validRequests.length >= this.maxRequests) {
+      // eslint-disable-next-line no-console
       console.warn(`Security: Rate limit exceeded for ${key}`)
       return false
     }

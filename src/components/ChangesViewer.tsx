@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Tabs, List, Typography, Space, Spin, Empty, Tag, Badge, Segmented, Tooltip } from 'antd'
 import type { TabsProps } from 'antd'
-import { FileText, FilePlus, FileX, FileCode, Loader, SplitSquareHorizontal, AlignLeft, GitCompare } from 'lucide-react'
+import { FileText, FilePlus, FileX, FileCode, SplitSquareHorizontal, AlignLeft, GitCompare } from 'lucide-react'
 
 const { Text } = Typography
 
@@ -44,6 +44,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
       await Promise.all(loadPromises)
     }
     loadAllDiffs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Auto-reload diffs every 2 seconds to detect new changes
@@ -62,6 +63,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
     // Cleanup interval on unmount
     return () => clearInterval(intervalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureName]) // Only depend on featureName, not projects array
 
   // Reset selected file when switching projects
