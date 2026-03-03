@@ -1754,7 +1754,7 @@ export function registerIpcHandlers() {
       return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
     }
 
-    // Check if already authenticated with gh - if yes, use that account
+    // Check if already authenticated via gh CLI - if yes, use that account
     try {
       await execAsync('gh auth status', { timeout: 10000 })
       // Already authenticated — grab user info
@@ -1771,7 +1771,13 @@ export function registerIpcHandlers() {
         return { success: true, user: 'GitHub User', avatar: '', alreadyLoggedIn: true }
       }
     } catch {
-      // Not authenticated — proceed with login flow
+      // Not authenticated with gh CLI — check if we have saved GitHub auth from before
+      const savedAuth = authStore.get()
+      if (savedAuth.provider === 'github' && savedAuth.user) {
+        // User was previously logged in with GitHub - let them know to re-authenticate or use saved info
+        return { success: true, user: savedAuth.user, avatar: savedAuth.avatar, savedAccount: true }
+      }
+      // No previous GitHub auth - proceed with login flow
     }
 
     const { spawn } = require('child_process')
@@ -1869,7 +1875,13 @@ export function registerIpcHandlers() {
         }
       }
     } catch {
-      // Not authenticated — proceed with login flow
+      // Not authenticated with glab CLI — check if we have saved GitLab auth from before
+      const savedAuth = authStore.get()
+      if (savedAuth.provider === 'gitlab' && savedAuth.user) {
+        // User was previously logged in with GitLab - return saved account
+        return { success: true, user: savedAuth.user, avatar: savedAuth.avatar, savedAccount: true }
+      }
+      // No previous GitLab auth - proceed with login flow
     }
 
     // Check if glab is installed
