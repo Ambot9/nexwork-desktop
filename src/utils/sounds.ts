@@ -129,7 +129,7 @@ const playFallbackSound = (type: string): void => {
     console.log(`Playing unique fallback: ${type}`)
   } catch {
     // eslint-disable-next-line no-console
-    console.error('Fallback sound failed:', error)
+    console.error('Fallback sound failed')
   }
 }
 
