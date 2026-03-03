@@ -1754,8 +1754,25 @@ export function registerIpcHandlers() {
       return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
     }
 
-    // Clear existing auth store to allow fresh login
-    authStore.clear()
+    // Check if already authenticated with gh - if yes, use that account
+    try {
+      await execAsync('gh auth status', { timeout: 10000 })
+      // Already authenticated — grab user info
+      try {
+        const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
+        const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
+        const user = userOut.trim()
+        const avatar = avatarOut.trim()
+        // Save to auth store for persistence
+        authStore.set({ provider: 'github', user, avatar })
+        return { success: true, user, avatar, alreadyLoggedIn: true }
+      } catch {
+        authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
+        return { success: true, user: 'GitHub User', avatar: '', alreadyLoggedIn: true }
+      }
+    } catch {
+      // Not authenticated — proceed with login flow
+    }
 
     const { spawn } = require('child_process')
 
