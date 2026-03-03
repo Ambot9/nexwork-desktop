@@ -119,6 +119,20 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
     getConflictFiles: (workingDir: string) => ipcRenderer.invoke('git:getConflictFiles', workingDir),
   },
 
+  // Git Auth
+  gitAuth: {
+    checkAuth: () => ipcRenderer.invoke('git:checkAuth'),
+    githubLogin: () => ipcRenderer.invoke('git:githubLogin'),
+    gitlabLogin: () => ipcRenderer.invoke('git:gitlabLogin'),
+    saveAuth: (data: { provider: string; user: string; avatar: string }) => ipcRenderer.invoke('git:saveAuth', data),
+    onAuthCode: (callback: (code: string) => void) => {
+      const listener = (_: any, code: string) => callback(code)
+      ipcRenderer.on('git:authCode', listener)
+      return () => ipcRenderer.removeListener('git:authCode', listener)
+    },
+    logout: () => ipcRenderer.invoke('git:logout'),
+  },
+
   // Pull Requests
   pullRequests: {
     checkGhCli: () => ipcRenderer.invoke('pr:checkGhCli'),
@@ -184,6 +198,18 @@ declare global {
       }
       git: {
         getConflictFiles: (workingDir: string) => Promise<{ success: boolean; files: string[] }>
+      }
+      gitAuth: {
+        checkAuth: () => Promise<{ authenticated: boolean; provider: string; user: string; avatar: string }>
+        githubLogin: () => Promise<{ success: boolean; user?: string; avatar?: string; error?: string }>
+        gitlabLogin: () => Promise<{ success: boolean; user?: string; avatar?: string; error?: string }>
+        saveAuth: (data: {
+          provider: string
+          user: string
+          avatar: string
+        }) => Promise<{ success: boolean; error?: string }>
+        onAuthCode: (callback: (code: string) => void) => () => void
+        logout: () => Promise<{ success: boolean; error?: string }>
       }
       pullRequests: {
         checkGhCli: () => Promise<{ installed: boolean; authenticated: boolean }>

@@ -14,6 +14,9 @@ interface AppSettings {
   aiApiKey: string
   aiModel: string
   lastWorkspace: string
+  gitAuthProvider: string
+  gitAuthUser: string
+  gitAuthAvatar: string
   windowBounds: {
     width: number
     height: number
@@ -62,11 +65,14 @@ class StorageService {
         aiApiKey: '',
         aiModel: 'claude-3-5-sonnet-20241022',
         lastWorkspace: '',
+        gitAuthProvider: '',
+        gitAuthUser: '',
+        gitAuthAvatar: '',
         windowBounds: {
           width: 1200,
-          height: 800
-        }
-      }
+          height: 800,
+        },
+      },
     })
 
     // Set up database path in user data directory
@@ -78,7 +84,7 @@ class StorageService {
   private initDatabase(): void {
     try {
       this.db = new Database(this.dbPath)
-      
+
       // Create features table
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS features (
@@ -144,7 +150,7 @@ class StorageService {
     if (!this.db) throw new Error('Database not initialized')
 
     const id = feature.id || `feat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
+
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO features 
       (id, name, status, createdAt, completedAt, deletedAt, projectCount, template, metadata)
@@ -160,7 +166,7 @@ class StorageService {
       feature.deletedAt || null,
       feature.projectCount,
       feature.template || 'default',
-      JSON.stringify(feature.metadata || {})
+      JSON.stringify(feature.metadata || {}),
     )
 
     return { ...feature, id } as FeatureRecord
@@ -171,12 +177,12 @@ class StorageService {
 
     const stmt = this.db.prepare('SELECT * FROM features WHERE id = ?')
     const row = stmt.get(id) as any
-    
+
     if (!row) return null
-    
+
     return {
       ...row,
-      metadata: JSON.parse(row.metadata || '{}')
+      metadata: JSON.parse(row.metadata || '{}'),
     }
   }
 
@@ -192,10 +198,10 @@ class StorageService {
 
     const stmt = this.db.prepare(query)
     const rows = status ? stmt.all(status) : stmt.all()
-    
+
     return rows.map((row: any) => ({
       ...row,
-      metadata: JSON.parse(row.metadata || '{}')
+      metadata: JSON.parse(row.metadata || '{}'),
     }))
   }
 
@@ -211,7 +217,7 @@ class StorageService {
     if (!this.db) return
 
     const updates: any = { status }
-    
+
     if (status === 'completed') {
       updates.completedAt = new Date().toISOString()
     } else if (status === 'deleted') {
@@ -219,19 +225,19 @@ class StorageService {
     }
 
     const setClause = Object.keys(updates)
-      .map(key => `${key} = ?`)
+      .map((key) => `${key} = ?`)
       .join(', ')
-    
+
     const stmt = this.db.prepare(`
       UPDATE features SET ${setClause} WHERE id = ?
     `)
-    
+
     stmt.run(...Object.values(updates), id)
   }
 
   deleteFeaturePermanently(id: string): void {
     if (!this.db) return
-    
+
     const stmt = this.db.prepare('DELETE FROM features WHERE id = ?')
     stmt.run(id)
   }
@@ -249,14 +255,7 @@ class StorageService {
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(
-      id,
-      activity.type,
-      activity.featureName,
-      activity.projectName || null,
-      timestamp,
-      activity.details || ''
-    )
+    stmt.run(id, activity.type, activity.featureName, activity.projectName || null, timestamp, activity.details || '')
 
     return { ...activity, id, timestamp }
   }
@@ -283,13 +282,13 @@ class StorageService {
     if (!this.db) return []
 
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
-    
+
     const stmt = this.db.prepare(`
       SELECT * FROM activity_log 
       WHERE timestamp > ? 
       ORDER BY timestamp DESC
     `)
-    
+
     return stmt.all(since) as ActivityRecord[]
   }
 
@@ -308,7 +307,7 @@ class StorageService {
         activeFeatures: 0,
         completedFeatures: 0,
         totalProjects: 0,
-        recentActivity: 0
+        recentActivity: 0,
       }
     }
 
@@ -316,7 +315,7 @@ class StorageService {
     const activeStmt = this.db.prepare("SELECT COUNT(*) as count FROM features WHERE status = 'active'")
     const completedStmt = this.db.prepare("SELECT COUNT(*) as count FROM features WHERE status = 'completed'")
     const projectsStmt = this.db.prepare('SELECT SUM(projectCount) as count FROM features')
-    
+
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const recentStmt = this.db.prepare('SELECT COUNT(*) as count FROM activity_log WHERE timestamp > ?')
 
@@ -325,7 +324,7 @@ class StorageService {
       activeFeatures: (activeStmt.get() as any).count,
       completedFeatures: (completedStmt.get() as any).count,
       totalProjects: (projectsStmt.get() as any).count || 0,
-      recentActivity: (recentStmt.get(since) as any).count
+      recentActivity: (recentStmt.get(since) as any).count,
     }
   }
 
@@ -345,7 +344,7 @@ class StorageService {
   // Backup database
   backup(backupPath?: string): string {
     if (!this.db) throw new Error('Database not initialized')
-    
+
     const path = backupPath || `${this.dbPath}.backup-${Date.now()}`
     this.db.backup(path)
     return path

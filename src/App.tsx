@@ -28,18 +28,21 @@ import {
   Trash2,
   Search,
   History,
+  LogOut,
+  User,
 } from 'lucide-react'
 import { CreateFeatureModal } from './components/CreateFeatureModal'
 import { FeatureDetails } from './pages/FeatureDetails'
 import { Settings as SettingsPage } from './pages/Settings'
 import { ActivityLog } from './pages/ActivityLog'
+import { GitAuth } from './pages/GitAuth'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { Feature } from './types'
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
 
-type View = 'dashboard' | 'feature-details' | 'settings' | 'activity'
+type View = 'dashboard' | 'feature-details' | 'settings' | 'activity' | 'git-auth'
 
 type StatusFilter = 'all' | 'in_progress' | 'completed' | 'pending' | 'expired'
 
@@ -73,12 +76,35 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [authUser, setAuthUser] = useState('')
+  const [authAvatar, setAuthAvatar] = useState('')
+  const [authProvider, setAuthProvider] = useState('')
+  const [authChecked, setAuthChecked] = useState(false)
   const {
     token: { colorBgContainer },
   } = theme.useToken()
 
   useEffect(() => {
-    loadFeatures()
+    // Check auth on startup
+    window.nexworkAPI.gitAuth
+      .checkAuth()
+      .then((auth) => {
+        if (auth.authenticated) {
+          setAuthUser(auth.user)
+          setAuthAvatar(auth.avatar)
+          setAuthProvider(auth.provider)
+          loadFeatures()
+        } else {
+          setCurrentView('git-auth')
+          setLoading(false)
+        }
+        setAuthChecked(true)
+      })
+      .catch(() => {
+        setCurrentView('git-auth')
+        setLoading(false)
+        setAuthChecked(true)
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -115,6 +141,22 @@ function App() {
     setSelectedFeatureId(featureName)
     setCurrentView('feature-details')
   }
+
+  const handleAuthenticated = useCallback((info: { provider: string; user: string; avatar: string }) => {
+    setAuthUser(info.user)
+    setAuthAvatar(info.avatar)
+    setAuthProvider(info.provider)
+    setCurrentView('dashboard')
+    loadFeatures()
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    await window.nexworkAPI.gitAuth.logout()
+    setAuthUser('')
+    setAuthAvatar('')
+    setAuthProvider('')
+    setCurrentView('git-auth')
+  }, [])
 
   const handleBackToDashboard = useCallback(() => {
     setCurrentView('dashboard')
@@ -251,6 +293,10 @@ function App() {
 
   // Render content based on current view
   const renderContent = () => {
+    if (currentView === 'git-auth') {
+      return null // git-auth is rendered outside the Layout
+    }
+
     if (currentView === 'feature-details' && selectedFeatureId) {
       return (
         <ErrorBoundary fallbackTitle="Failed to load feature details">
@@ -475,6 +521,11 @@ function App() {
     )
   }
 
+  // Render full-screen auth page without sidebar
+  if (currentView === 'git-auth') {
+    return <GitAuth onAuthenticated={handleAuthenticated} />
+  }
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
@@ -529,7 +580,7 @@ function App() {
             style={{ border: 'none', marginTop: 8, flex: 1 }}
           />
 
-          {/* Version footer */}
+          {/* User & Version footer */}
           {!sidebarCollapsed && (
             <div
               style={{
@@ -537,6 +588,29 @@ function App() {
                 borderTop: '1px solid rgba(128,128,128,0.08)',
               }}
             >
+              {authUser && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    {authAvatar ? (
+                      <img src={authAvatar} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+                    ) : (
+                      <User size={14} style={{ opacity: 0.5 }} />
+                    )}
+                    <Text style={{ fontSize: 12, flex: 1 }} ellipsis>
+                      {authUser}
+                    </Text>
+                  </div>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<LogOut size={12} />}
+                    onClick={handleLogout}
+                    style={{ padding: '2px 0', height: 'auto', fontSize: 11, color: 'inherit', opacity: 0.5 }}
+                  >
+                    Switch Account
+                  </Button>
+                </div>
+              )}
               <Text type="secondary" style={{ fontSize: 11 }}>
                 v1.0.11
               </Text>

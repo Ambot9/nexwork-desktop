@@ -1706,6 +1706,266 @@ export function registerIpcHandlers() {
     },
   )
 
+  // ==================== GIT AUTH HANDLERS ====================
+
+  ipcMain.handle('git:checkAuth', async () => {
+    try {
+      const { authStore } = await import('./auth-store')
+      const { provider, user, avatar } = authStore.get()
+
+      if (!provider || provider === '') {
+        return { authenticated: false, provider: '', user: '', avatar: '' }
+      }
+
+      if (provider === 'local') {
+        return { authenticated: true, provider: 'local', user: 'Local Mode', avatar: '' }
+      }
+
+      if (provider === 'github') {
+        // Verify token is still valid
+        try {
+          await execAsync('gh auth status 2>&1', { timeout: 10000 })
+          return { authenticated: true, provider: 'github', user, avatar }
+        } catch {
+          // Token expired or invalid — clear stored auth
+          authStore.clear()
+          return { authenticated: false, provider: '', user: '', avatar: '' }
+        }
+      }
+
+      if (provider === 'gitlab') {
+        return { authenticated: true, provider: 'gitlab', user, avatar }
+      }
+
+      return { authenticated: false, provider: '', user: '', avatar: '' }
+    } catch (error: any) {
+      log.error('git:checkAuth error:', error)
+      return { authenticated: false, provider: '', user: '', avatar: '' }
+    }
+  })
+
+  ipcMain.handle('git:githubLogin', async (event) => {
+    const { authStore } = await import('./auth-store')
+
+    // First check if already authenticated
+    try {
+      await execAsync('gh auth status', { timeout: 10000 })
+      // Already authenticated — just grab user info
+      try {
+        const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
+        const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
+        const user = userOut.trim()
+        const avatar = avatarOut.trim()
+        authStore.set({ provider: 'github', user, avatar })
+        return { success: true, user, avatar }
+      } catch {
+        authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
+        return { success: true, user: 'GitHub User', avatar: '' }
+      }
+    } catch {
+      // Not authenticated — proceed with login flow
+    }
+
+    // Check if gh is installed
+    try {
+      await execAsync('which gh', { timeout: 5000 })
+    } catch {
+      return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
+    }
+
+    const { spawn } = require('child_process')
+
+    return new Promise((resolve) => {
+      const child = spawn('gh', ['auth', 'login', '--web', '-p', 'https', '-h', 'github.com'], {
+        env: { ...process.env },
+      })
+
+      let output = ''
+      let resolved = false
+
+      const handleData = (data: Buffer) => {
+        const text = data.toString()
+        output += text
+
+        // Extract and send one-time code to renderer
+        const codeMatch = text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i)
+        if (codeMatch) {
+          event.sender.send('git:authCode', codeMatch[1])
+        }
+
+        // Auto-press Enter when prompted to open browser
+        if (text.includes('Press Enter') || text.includes('press Enter')) {
+          child.stdin.write('\n')
+        }
+      }
+
+      child.stdout.on('data', handleData)
+      child.stderr.on('data', handleData)
+
+      child.on('close', async (exitCode: number) => {
+        if (resolved) return
+        resolved = true
+
+        if (exitCode === 0) {
+          try {
+            const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
+            const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
+            const user = userOut.trim()
+            const avatar = avatarOut.trim()
+            authStore.set({ provider: 'github', user, avatar })
+            resolve({ success: true, user, avatar })
+          } catch {
+            authStore.set({ provider: 'github', user: 'GitHub User', avatar: '' })
+            resolve({ success: true, user: 'GitHub User', avatar: '' })
+          }
+        } else {
+          resolve({ success: false, error: 'Authentication failed or was cancelled' })
+        }
+      })
+
+      child.on('error', (err: Error) => {
+        if (resolved) return
+        resolved = true
+        resolve({ success: false, error: err.message })
+      })
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        if (resolved) return
+        resolved = true
+        child.kill()
+        resolve({ success: false, error: 'Authentication timed out' })
+      }, 300000)
+    })
+  })
+
+  ipcMain.handle('git:gitlabLogin', async (event) => {
+    const { authStore } = await import('./auth-store')
+
+    // First check if already authenticated via glab
+    try {
+      await execAsync('glab auth status', { timeout: 10000 })
+      // Already authenticated — grab user info
+      try {
+        const { stdout: userOut } = await execAsync('glab api user --jq ".username"', { timeout: 10000 })
+        const { stdout: avatarOut } = await execAsync('glab api user --jq ".avatar_url"', { timeout: 10000 })
+        const user = userOut.trim()
+        const avatar = avatarOut.trim()
+        authStore.set({ provider: 'gitlab', user, avatar })
+        return { success: true, user, avatar }
+      } catch {
+        // glab api may not support --jq, try raw
+        try {
+          const { stdout: rawOut } = await execAsync('glab api user', { timeout: 10000 })
+          const data = JSON.parse(rawOut)
+          const user = data.username || 'GitLab User'
+          const avatar = data.avatar_url || ''
+          authStore.set({ provider: 'gitlab', user, avatar })
+          return { success: true, user, avatar }
+        } catch {
+          authStore.set({ provider: 'gitlab', user: 'GitLab User', avatar: '' })
+          return { success: true, user: 'GitLab User', avatar: '' }
+        }
+      }
+    } catch {
+      // Not authenticated — proceed with login flow
+    }
+
+    // Check if glab is installed
+    try {
+      await execAsync('which glab', { timeout: 5000 })
+    } catch {
+      return { success: false, error: 'not_installed' }
+    }
+
+    const { spawn } = require('child_process')
+
+    return new Promise((resolve) => {
+      const child = spawn('glab', ['auth', 'login', '--web', '-h', 'gitlab.com'], {
+        env: { ...process.env },
+      })
+
+      let output = ''
+      let resolved = false
+
+      const handleData = (data: Buffer) => {
+        const text = data.toString()
+        output += text
+
+        // Extract and send one-time code to renderer
+        const codeMatch =
+          text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i) || text.match(/code:\s*([A-Z0-9_-]{6,})/i)
+        if (codeMatch) {
+          event.sender.send('git:authCode', codeMatch[1])
+        }
+
+        // Auto-press Enter when prompted to open browser
+        if (text.includes('Press Enter') || text.includes('press Enter')) {
+          child.stdin.write('\n')
+        }
+      }
+
+      child.stdout.on('data', handleData)
+      child.stderr.on('data', handleData)
+
+      child.on('close', async (exitCode: number) => {
+        if (resolved) return
+        resolved = true
+
+        if (exitCode === 0) {
+          try {
+            const { stdout: rawOut } = await execAsync('glab api user', { timeout: 10000 })
+            const data = JSON.parse(rawOut)
+            const user = data.username || 'GitLab User'
+            const avatar = data.avatar_url || ''
+            authStore.set({ provider: 'gitlab', user, avatar })
+            resolve({ success: true, user, avatar })
+          } catch {
+            authStore.set({ provider: 'gitlab', user: 'GitLab User', avatar: '' })
+            resolve({ success: true, user: 'GitLab User', avatar: '' })
+          }
+        } else {
+          resolve({ success: false, error: 'Authentication failed or was cancelled' })
+        }
+      })
+
+      child.on('error', (err: Error) => {
+        if (resolved) return
+        resolved = true
+        resolve({ success: false, error: err.message })
+      })
+
+      setTimeout(() => {
+        if (resolved) return
+        resolved = true
+        child.kill()
+        resolve({ success: false, error: 'Authentication timed out' })
+      }, 300000)
+    })
+  })
+
+  ipcMain.handle('git:logout', async () => {
+    try {
+      const { authStore } = await import('./auth-store')
+      authStore.clear()
+      return { success: true }
+    } catch (error: any) {
+      log.error('git:logout error:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git:saveAuth', async (_, data: { provider: string; user: string; avatar: string }) => {
+    try {
+      const { authStore } = await import('./auth-store')
+      authStore.set(data)
+      return { success: true }
+    } catch (error: any) {
+      log.error('git:saveAuth error:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
   log.info('✅ IPC handlers registered with real Nexwork CLI')
 }
 
