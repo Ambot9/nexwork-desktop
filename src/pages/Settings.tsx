@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Space, Typography, Divider, message, Row, Col, Card } from 'antd'
 import { useTheme } from '../contexts/ThemeContext'
 import { WorkspaceSettings } from '../components/settings/WorkspaceSettings'
+import { WorkspaceProjectsSettings } from '../components/settings/WorkspaceProjectsSettings'
 import { AppearanceSettings } from '../components/settings/AppearanceSettings'
 import { PreferencesSettings } from '../components/settings/PreferencesSettings'
 import { NotificationSettings } from '../components/settings/NotificationSettings'
@@ -115,6 +116,7 @@ export function Settings() {
           searchPaths: searchPaths.split(',').map((s: string) => s.trim()),
           exclude: exclude.split(',').map((s: string) => s.trim()),
           defaultTemplate,
+          managedProjects: config.userConfig?.managedProjects,
           ai: {
             enabled: aiEnabled,
             provider: aiProvider as 'claude' | 'openai' | 'ollama',
@@ -191,6 +193,35 @@ export function Settings() {
     saveSetting('exclude', value)
   }
 
+  const handleManagedProjectsChange = async (managedProjects: string[]) => {
+    if (!config) return
+
+    const updatedConfig: Config = {
+      workspaceRoot: config.workspaceRoot,
+      projects: config.projects,
+      features: config.features,
+      userConfig: {
+        searchPaths: searchPaths.split(',').map((s: string) => s.trim()),
+        exclude: exclude.split(',').map((s: string) => s.trim()),
+        defaultTemplate,
+        managedProjects,
+        ai: {
+          enabled: aiEnabled,
+          provider: aiProvider as 'claude' | 'openai' | 'ollama',
+          apiKey: aiApiKey,
+          model: aiModel,
+        },
+      },
+    }
+
+    try {
+      await window.nexworkAPI.config.save(updatedConfig)
+      setConfig(updatedConfig)
+    } catch (error) {
+      console.error('Failed to save managed projects:', error)
+    }
+  }
+
   const handleStartupChange = async (checked: boolean) => {
     try {
       await window.nexworkAPI.system.setAutoLaunch(checked)
@@ -223,6 +254,8 @@ export function Settings() {
           exclude={exclude}
           onExcludeChange={handleExcludeChange}
         />
+
+        <WorkspaceProjectsSettings config={config} onManagedProjectsChange={handleManagedProjectsChange} />
         <AppearanceSettings selectedTheme={selectedTheme} onThemeChange={setSelectedTheme} isDark={isDark} />
         <PreferencesSettings
           aiEnabled={aiEnabled}

@@ -85,7 +85,12 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     try {
       // Load configuration
       const config = await window.nexworkAPI.config.load()
-      const projects = config.projects?.map((p: any) => p.name) || []
+
+      // Filter to managed projects if configured; otherwise use all
+      const managedProjects: string[] | undefined = config.userConfig?.managedProjects
+      const projects = (config.projects || [])
+        .map((p: any) => p.name)
+        .filter((name: string) => managedProjects === undefined || managedProjects.includes(name))
       setAvailableProjects(projects)
 
       // Load templates

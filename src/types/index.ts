@@ -38,6 +38,11 @@ export interface UserConfig {
   searchPaths?: string[]
   exclude?: string[]
   defaultTemplate?: string
+  /**
+   * Optional list of project names that Nexwork should manage in this workspace.
+   * If omitted or empty, all discovered projects are considered managed.
+   */
+  managedProjects?: string[]
   ai?: {
     enabled: boolean
     provider: 'claude' | 'openai' | 'ollama'
