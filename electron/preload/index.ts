@@ -201,8 +201,22 @@ declare global {
       }
       gitAuth: {
         checkAuth: () => Promise<{ authenticated: boolean; provider: string; user: string; avatar: string }>
-        githubLogin: () => Promise<{ success: boolean; user?: string; avatar?: string; error?: string }>
-        gitlabLogin: () => Promise<{ success: boolean; user?: string; avatar?: string; error?: string }>
+        githubLogin: () => Promise<{
+          success: boolean
+          user?: string
+          avatar?: string
+          error?: string
+          alreadyLoggedIn?: boolean
+          savedAccount?: boolean
+        }>
+        gitlabLogin: () => Promise<{
+          success: boolean
+          user?: string
+          avatar?: string
+          error?: string
+          alreadyLoggedIn?: boolean
+          savedAccount?: boolean
+        }>
         saveAuth: (data: {
           provider: string
           user: string

@@ -66,6 +66,14 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
         message.error(result.error || 'GitHub authentication failed')
         return
       }
+      // If already logged in or saved account, use it
+      if (result.alreadyLoggedIn || result.savedAccount) {
+        await saveAndFinish('github', result.user || 'GitHub User', result.avatar || '')
+        if (result.savedAccount) {
+          message.info(`Using saved account: ${result.user}`)
+        }
+        return
+      }
       await saveAndFinish('github', result.user || 'GitHub User', result.avatar || '')
     } catch (error: any) {
       cleanupListener()
@@ -85,6 +93,14 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
       const result = await window.nexworkAPI.gitAuth.gitlabLogin()
       cleanupListener()
       if (result.success) {
+        // If already logged in or saved account, use it
+        if (result.alreadyLoggedIn || result.savedAccount) {
+          await saveAndFinish('gitlab', result.user || 'GitLab User', result.avatar || '')
+          if (result.savedAccount) {
+            message.info(`Using saved account: ${result.user}`)
+          }
+          return
+        }
         await saveAndFinish('gitlab', result.user || 'GitLab User', result.avatar || '')
         return
       }
