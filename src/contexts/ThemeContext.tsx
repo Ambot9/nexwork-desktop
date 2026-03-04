@@ -147,7 +147,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
             },
             Button: {
               borderRadius: 10,
-              fontWeight: 600,
             },
             Input: {
               borderRadius: 10,
@@ -157,7 +156,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
             },
             Tag: {
               borderRadius: 999,
-              fontWeight: 600,
             },
           },
         }}
