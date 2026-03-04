@@ -60,7 +60,7 @@ export function FeatureWorkspace({ ctx }: Props) {
                     {status?.exists && status.baseBranch && (
                       <Space size={6}>
                         <Text type="secondary" style={{ fontSize: 11 }}>
-                          {status.baseBranch}
+                          Base: {status.baseBranch}
                         </Text>
                         {gitStatuses?.[project.name]?.branch && (
                           <Text type="secondary" style={{ fontSize: 11 }}>

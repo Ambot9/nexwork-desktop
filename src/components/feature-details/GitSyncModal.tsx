@@ -149,11 +149,11 @@ export function GitSyncModal({ ctx }: Props) {
                         {project.name}
                       </Text>
 
-                      <Tag color="default">{project.baseBranch || 'staging'}</Tag>
+                      <Tag color="default">Base: {project.baseBranch || 'staging'}</Tag>
 
                       {status?.branch && (
                         <Tooltip title="Main repo currently checked out here">
-                          <Tag color="default">Current: {status.branch}</Tag>
+                          <Tag color="processing">Current: {status.branch}</Tag>
                         </Tooltip>
                       )}
 

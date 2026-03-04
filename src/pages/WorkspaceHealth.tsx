@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Card,
   Typography,
@@ -86,25 +86,7 @@ export function WorkspaceHealth({ onOpenSettings }: WorkspaceHealthProps) {
   const [refreshing, setRefreshing] = useState(false)
   const blockedRemotesRef = useRef<Record<string, { until: number; reason: string }>>({})
 
-  useEffect(() => {
-    void loadProjects()
-  }, [])
-
-  const loadProjects = async () => {
-    setLoading(true)
-    try {
-      const config = await window.nexworkAPI.config.load()
-      setWorkspaceRoot(config.workspaceRoot || '')
-      setProjects(config.projects || [])
-      await refreshHealth(config)
-    } catch {
-      setProjects([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const refreshHealth = async (config?: any) => {
+  const refreshHealth = useCallback(async (config?: any) => {
     setRefreshing(true)
     try {
       const currentConfig = config || (await window.nexworkAPI.config.load())
@@ -245,7 +227,25 @@ export function WorkspaceHealth({ onOpenSettings }: WorkspaceHealthProps) {
     } finally {
       setRefreshing(false)
     }
-  }
+  }, [])
+
+  const loadProjects = useCallback(async () => {
+    setLoading(true)
+    try {
+      const config = await window.nexworkAPI.config.load()
+      setWorkspaceRoot(config.workspaceRoot || '')
+      setProjects(config.projects || [])
+      await refreshHealth(config)
+    } catch {
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
+  }, [refreshHealth])
+
+  useEffect(() => {
+    void loadProjects()
+  }, [loadProjects])
 
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase()
