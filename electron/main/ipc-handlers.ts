@@ -27,6 +27,134 @@ const { TemplateManager } = require('multi-repo-orchestrator/dist/core/template-
 
 // Helper for async exec
 const execAsync = promisify(exec)
+const GITHUB_CLIENT_ID = process.env.NEXWORK_GITHUB_CLIENT_ID || 'Ov23lin4zx7UqCSelf5z'
+
+async function githubDeviceFlowLogin(event: Electron.IpcMainInvokeEvent, authStore: any) {
+  if (!GITHUB_CLIENT_ID) {
+    return { success: false, error: 'Missing GitHub OAuth client id' }
+  }
+
+  const { shell } = require('electron')
+  const deviceResponse = await fetch('https://github.com/login/device/code', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: GITHUB_CLIENT_ID,
+      scope: 'read:user',
+    }).toString(),
+  })
+
+  const deviceBody = await deviceResponse.text()
+  if (!deviceResponse.ok) {
+    return {
+      success: false,
+      error: `Failed to start GitHub login (${deviceResponse.status}). ${deviceBody || 'Enable Device Flow in the GitHub OAuth app.'}`,
+    }
+  }
+
+  let deviceData: any = {}
+  try {
+    deviceData = JSON.parse(deviceBody)
+  } catch {
+    return { success: false, error: 'GitHub login returned invalid response' }
+  }
+  const deviceCode = deviceData.device_code
+  const userCode = deviceData.user_code
+  const verificationUrl = deviceData.verification_uri_complete || deviceData.verification_uri
+  let interval = Math.max(5, Number(deviceData.interval || 5))
+  const expiresAt = Date.now() + Number(deviceData.expires_in || 900) * 1000
+
+  if (!deviceCode || !userCode || !verificationUrl) {
+    return { success: false, error: 'GitHub device flow failed to start' }
+  }
+
+  event.sender.send('git:authCode', userCode)
+  shell.openExternal(verificationUrl)
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  while (Date.now() < expiresAt) {
+    await wait(interval * 1000)
+
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: GITHUB_CLIENT_ID,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }).toString(),
+    })
+
+    if (!tokenResponse.ok) {
+      return { success: false, error: 'Failed to complete GitHub login' }
+    }
+
+    const tokenData: any = await tokenResponse.json()
+
+    if (tokenData.error) {
+      if (tokenData.error === 'authorization_pending') {
+        continue
+      }
+      if (tokenData.error === 'slow_down') {
+        interval += 5
+        continue
+      }
+      if (tokenData.error === 'expired_token' || tokenData.error === 'access_denied') {
+        return { success: false, error: 'GitHub authorization was cancelled' }
+      }
+      return { success: false, error: tokenData.error_description || 'GitHub login failed' }
+    }
+
+    const accessToken = tokenData.access_token
+    if (!accessToken) {
+      return { success: false, error: 'Missing GitHub access token' }
+    }
+
+    const userResponse = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+      },
+    })
+
+    if (!userResponse.ok) {
+      return { success: false, error: 'Failed to fetch GitHub user' }
+    }
+
+    const userData: any = await userResponse.json()
+    const user = userData.login || 'GitHub User'
+    const avatar = userData.avatar_url || ''
+    const id = `github:${user}`
+    const now = new Date().toISOString()
+    const current = authStore.get()
+    const accounts = current.accounts || []
+    const existingIndex = accounts.findIndex((a: any) => a.id === id)
+    const updatedAccount = {
+      id,
+      provider: 'github' as const,
+      user,
+      avatar,
+      token: accessToken,
+      lastUsedAt: now,
+    }
+    if (existingIndex >= 0) {
+      accounts[existingIndex] = updatedAccount
+    } else {
+      accounts.push(updatedAccount)
+    }
+    authStore.set({ provider: 'github', user, avatar, accounts, activeAccountId: id })
+    return { success: true, user, avatar }
+  }
+
+  return { success: false, error: 'Authentication timed out' }
+}
 
 // Global workspace root - empty by default for first-time setup
 let currentWorkspaceRoot: string = ''
@@ -233,6 +361,25 @@ export function registerIpcHandlers() {
       return { success: true }
     } catch (error: any) {
       log.error('Failed to open VS Code:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('system:openInFinder', async (_, folderPath: string) => {
+    try {
+      const { exec } = require('child_process')
+      return new Promise((resolve) => {
+        exec(`open "${folderPath}"`, (error: any) => {
+          if (error) {
+            log.error('Failed to open Finder:', error)
+            resolve({ success: false, error: 'Failed to open Finder' })
+          } else {
+            resolve({ success: true })
+          }
+        })
+      })
+    } catch (error: any) {
+      log.error('Failed to open Finder:', error)
       return { success: false, error: error.message }
     }
   })
@@ -1756,20 +1903,17 @@ export function registerIpcHandlers() {
     })
   })
 
-  // Pull Request creation via gh CLI
+  // Pull Request creation via GitHub API (OAuth token)
   ipcMain.handle('pr:checkGhCli', async () => {
-    const { exec } = require('child_process')
-    return new Promise((resolve) => {
-      exec('gh auth status', { encoding: 'utf-8', timeout: 10000 }, (error: any, stdout: string, stderr: string) => {
-        if (error) {
-          const output = stderr || error.message || ''
-          const isInstalled = !output.includes('command not found') && !output.includes('not recognized')
-          resolve({ installed: isInstalled, authenticated: false })
-        } else {
-          resolve({ installed: true, authenticated: true })
-        }
-      })
-    })
+    try {
+      const { authStore } = await import('./auth-store')
+      const { provider, activeAccountId, accounts } = authStore.get()
+      if (provider !== 'github') return { installed: true, authenticated: false }
+      const active = (accounts || []).find((a: any) => a.id === activeAccountId)
+      return { installed: true, authenticated: !!active?.token }
+    } catch {
+      return { installed: true, authenticated: false }
+    }
   })
 
   ipcMain.handle(
@@ -1780,7 +1924,19 @@ export function registerIpcHandlers() {
       options: { title: string; body: string; draft: boolean },
     ) => {
       const { exec } = require('child_process')
+      const { authStore } = await import('./auth-store')
       const results: Array<{ projectName: string; prUrl?: string; error?: string }> = []
+
+      const { provider, activeAccountId, accounts } = authStore.get()
+      if (provider !== 'github') {
+        return { results: projects.map((p) => ({ projectName: p.projectName, error: 'GitHub not authenticated' })) }
+      }
+
+      const active = (accounts || []).find((a: any) => a.id === activeAccountId)
+      const token = active?.token
+      if (!token) {
+        return { results: projects.map((p) => ({ projectName: p.projectName, error: 'Missing GitHub token' })) }
+      }
 
       for (const project of projects) {
         try {
@@ -1805,30 +1961,67 @@ export function registerIpcHandlers() {
             continue
           }
 
-          // Create PR
-          const draftFlag = options.draft ? ' --draft' : ''
-          const title = options.title.replace(/"/g, '\\"')
-          const body = options.body.replace(/"/g, '\\"')
-          const prResult: any = await new Promise((resolve) => {
+          // Determine owner/repo from git remote
+          const remoteResult: any = await new Promise((resolve) => {
             exec(
-              `gh pr create --base "${project.baseBranch}" --head "${project.branch}" --title "${title}" --body "${body}"${draftFlag}`,
-              {
-                cwd: project.workingDir,
-                encoding: 'utf-8',
-                timeout: 30000,
-              },
+              'git config --get remote.origin.url',
+              { cwd: project.workingDir, encoding: 'utf-8', timeout: 10000 },
               (error: any, stdout: string, stderr: string) => {
                 resolve({ success: !error, output: stdout, error: stderr || error?.message })
               },
             )
           })
 
-          if (prResult.success) {
-            const prUrl = prResult.output.trim().split('\n').pop() || ''
-            results.push({ projectName: project.projectName, prUrl })
-          } else {
-            results.push({ projectName: project.projectName, error: prResult.error })
+          if (!remoteResult.success || !remoteResult.output.trim()) {
+            results.push({ projectName: project.projectName, error: 'Could not read origin URL' })
+            continue
           }
+
+          const remoteUrl = remoteResult.output.trim()
+          let owner = ''
+          let repo = ''
+          const sshMatch = remoteUrl.match(/[:/]([^/]+)\/([^/]+?)(?:\.git)?$/)
+          const httpsMatch = remoteUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/)
+          if (httpsMatch) {
+            owner = httpsMatch[1]
+            repo = httpsMatch[2]
+          } else if (sshMatch) {
+            owner = sshMatch[1]
+            repo = sshMatch[2]
+          }
+
+          if (!owner || !repo) {
+            results.push({ projectName: project.projectName, error: 'Unsupported GitHub remote URL' })
+            continue
+          }
+
+          const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: options.title,
+              body: options.body,
+              head: project.branch,
+              base: project.baseBranch,
+              draft: options.draft,
+            }),
+          })
+
+          if (!prResponse.ok) {
+            const errorText = await prResponse.text()
+            results.push({
+              projectName: project.projectName,
+              error: `PR create failed: ${prResponse.status} ${errorText}`,
+            })
+            continue
+          }
+
+          const prData: any = await prResponse.json()
+          results.push({ projectName: project.projectName, prUrl: prData.html_url })
         } catch (error: any) {
           results.push({ projectName: project.projectName, error: error.message })
         }
@@ -1854,10 +2047,21 @@ export function registerIpcHandlers() {
       }
 
       if (provider === 'github') {
-        // Verify token is still valid
+        const active = (accounts || []).find((a: any) => a.id === activeAccountId) || null
+        const token = active?.token
+        if (!token) {
+          return { authenticated: false, provider: '', user: '', avatar: '' }
+        }
         try {
-          await execAsync('gh auth status 2>&1', { timeout: 10000 })
-          const active = (accounts || []).find((a: any) => a.id === activeAccountId) || null
+          const verifyResponse = await fetch('https://api.github.com/user', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/vnd.github+json',
+            },
+          })
+          if (!verifyResponse.ok) {
+            return { authenticated: false, provider: '', user: '', avatar: '' }
+          }
           return {
             authenticated: true,
             provider: 'github',
@@ -1865,7 +2069,6 @@ export function registerIpcHandlers() {
             avatar: active?.avatar || avatar,
           }
         } catch {
-          authStore.clear()
           return { authenticated: false, provider: '', user: '', avatar: '' }
         }
       }
@@ -1903,282 +2106,13 @@ export function registerIpcHandlers() {
       }
     }
 
-    // No saved GitHub accounts yet – fall back to CLI-based detection/login
-
-    // Check if gh is installed FIRST (needed for login / refresh flows)
-    try {
-      await execAsync('which gh', { timeout: 5000 })
-    } catch {
-      return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
-    }
-
-    // Check if already authenticated via gh CLI - if yes, use that account
-    try {
-      await execAsync('gh auth status', { timeout: 10000 })
-      // Already authenticated — grab user info
-      try {
-        const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
-        const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
-        const user = userOut.trim()
-        const avatar = avatarOut.trim()
-        const id = `github:${user}`
-        const now = new Date().toISOString()
-        const current = authStore.get()
-        const accounts = current.accounts || []
-        const existingIndex = accounts.findIndex((a: any) => a.id === id)
-        const updatedAccount = {
-          id,
-          provider: 'github' as const,
-          user,
-          avatar,
-          lastUsedAt: now,
-        }
-        if (existingIndex >= 0) {
-          accounts[existingIndex] = updatedAccount
-        } else {
-          accounts.push(updatedAccount)
-        }
-        authStore.set({
-          provider: 'github',
-          user,
-          avatar,
-          accounts,
-          activeAccountId: id,
-        })
-        return { success: true, user, avatar, alreadyLoggedIn: true }
-      } catch {
-        const fallbackUser = 'GitHub User'
-        const id = `github:${fallbackUser}`
-        const now = new Date().toISOString()
-        const current = authStore.get()
-        const accounts = current.accounts || []
-        const existingIndex = accounts.findIndex((a: any) => a.id === id)
-        const updatedAccount = {
-          id,
-          provider: 'github' as const,
-          user: fallbackUser,
-          avatar: '',
-          lastUsedAt: now,
-        }
-        if (existingIndex >= 0) {
-          accounts[existingIndex] = updatedAccount
-        } else {
-          accounts.push(updatedAccount)
-        }
-        authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
-        return { success: true, user: fallbackUser, avatar: '', alreadyLoggedIn: true }
-      }
-    } catch {
-      // Not authenticated with gh CLI - proceed with login flow below
-    }
-
-    const { spawn } = require('child_process')
-
-    return new Promise((resolve) => {
-      const child = spawn('gh', ['auth', 'login', '--web', '-p', 'https', '-h', 'github.com'], {
-        env: { ...process.env },
-      })
-
-      let _output = ''
-      let resolved = false
-
-      const handleData = (data: Buffer) => {
-        const text = data.toString()
-        _output += text
-
-        // Extract and send one-time code to renderer
-        const codeMatch = text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i)
-        if (codeMatch) {
-          event.sender.send('git:authCode', codeMatch[1])
-        }
-
-        // Auto-press Enter when prompted to open browser
-        if (text.includes('Press Enter') || text.includes('press Enter')) {
-          child.stdin.write('\n')
-        }
-      }
-
-      child.stdout.on('data', handleData)
-      child.stderr.on('data', handleData)
-
-      child.on('close', async (exitCode: number) => {
-        if (resolved) return
-        resolved = true
-
-        if (exitCode === 0) {
-          try {
-            const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
-            const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
-            const user = userOut.trim()
-            const avatar = avatarOut.trim()
-            const id = `github:${user}`
-            const now = new Date().toISOString()
-            const current = authStore.get()
-            const accounts = current.accounts || []
-            const existingIndex = accounts.findIndex((a: any) => a.id === id)
-            const updatedAccount = {
-              id,
-              provider: 'github' as const,
-              user,
-              avatar,
-              lastUsedAt: now,
-            }
-            if (existingIndex >= 0) {
-              accounts[existingIndex] = updatedAccount
-            } else {
-              accounts.push(updatedAccount)
-            }
-            authStore.set({ provider: 'github', user, avatar, accounts, activeAccountId: id })
-            resolve({ success: true, user, avatar })
-          } catch {
-            const fallbackUser = 'GitHub User'
-            const id = `github:${fallbackUser}`
-            const now = new Date().toISOString()
-            const current = authStore.get()
-            const accounts = current.accounts || []
-            const existingIndex = accounts.findIndex((a: any) => a.id === id)
-            const updatedAccount = {
-              id,
-              provider: 'github' as const,
-              user: fallbackUser,
-              avatar: '',
-              lastUsedAt: now,
-            }
-            if (existingIndex >= 0) {
-              accounts[existingIndex] = updatedAccount
-            } else {
-              accounts.push(updatedAccount)
-            }
-            authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
-            resolve({ success: true, user: fallbackUser, avatar: '' })
-          }
-        } else {
-          resolve({ success: false, error: 'Authentication failed or was cancelled' })
-        }
-      })
-
-      child.on('error', (err: Error) => {
-        if (resolved) return
-        resolved = true
-        resolve({ success: false, error: err.message })
-      })
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        if (resolved) return
-        resolved = true
-        child.kill()
-        resolve({ success: false, error: 'Authentication timed out' })
-      }, 300000)
-    })
+    return githubDeviceFlowLogin(event, authStore)
   })
 
   ipcMain.handle('git:githubLoginNew', async (event) => {
+    // Force a fresh GitHub device flow login
     const { authStore } = await import('./auth-store')
-
-    // Force a fresh GitHub CLI login flow, regardless of saved accounts
-    try {
-      await execAsync('which gh', { timeout: 5000 })
-    } catch {
-      return { success: false, error: 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com' }
-    }
-
-    const { spawn } = require('child_process')
-
-    return new Promise((resolve) => {
-      const child = spawn('gh', ['auth', 'login', '--web', '-p', 'https', '-h', 'github.com'], {
-        env: { ...process.env },
-      })
-
-      let _output = ''
-      let resolved = false
-
-      const handleData = (data: Buffer) => {
-        const text = data.toString()
-        _output += text
-
-        const codeMatch = text.match(/one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i)
-        if (codeMatch) {
-          event.sender.send('git:authCode', codeMatch[1])
-        }
-
-        if (text.includes('Press Enter') || text.includes('press Enter')) {
-          child.stdin.write('\n')
-        }
-      }
-
-      child.stdout.on('data', handleData)
-      child.stderr.on('data', handleData)
-
-      child.on('close', async (exitCode: number) => {
-        if (resolved) return
-        resolved = true
-
-        if (exitCode === 0) {
-          try {
-            const { stdout: userOut } = await execAsync('gh api user --jq ".login"', { timeout: 10000 })
-            const { stdout: avatarOut } = await execAsync('gh api user --jq ".avatar_url"', { timeout: 10000 })
-            const user = userOut.trim()
-            const avatar = avatarOut.trim()
-            const id = `github:${user}`
-            const now = new Date().toISOString()
-            const current = authStore.get()
-            const accounts = current.accounts || []
-            const existingIndex = accounts.findIndex((a: any) => a.id === id)
-            const updatedAccount = {
-              id,
-              provider: 'github' as const,
-              user,
-              avatar,
-              lastUsedAt: now,
-            }
-            if (existingIndex >= 0) {
-              accounts[existingIndex] = updatedAccount
-            } else {
-              accounts.push(updatedAccount)
-            }
-            authStore.set({ provider: 'github', user, avatar, accounts, activeAccountId: id })
-            resolve({ success: true, user, avatar })
-          } catch {
-            const fallbackUser = 'GitHub User'
-            const id = `github:${fallbackUser}`
-            const now = new Date().toISOString()
-            const current = authStore.get()
-            const accounts = current.accounts || []
-            const existingIndex = accounts.findIndex((a: any) => a.id === id)
-            const updatedAccount = {
-              id,
-              provider: 'github' as const,
-              user: fallbackUser,
-              avatar: '',
-              lastUsedAt: now,
-            }
-            if (existingIndex >= 0) {
-              accounts[existingIndex] = updatedAccount
-            } else {
-              accounts.push(updatedAccount)
-            }
-            authStore.set({ provider: 'github', user: fallbackUser, avatar: '', accounts, activeAccountId: id })
-            resolve({ success: true, user: fallbackUser, avatar: '' })
-          }
-        } else {
-          resolve({ success: false, error: 'Authentication failed or was cancelled' })
-        }
-      })
-
-      child.on('error', (err: Error) => {
-        if (resolved) return
-        resolved = true
-        resolve({ success: false, error: err.message })
-      })
-
-      setTimeout(() => {
-        if (resolved) return
-        resolved = true
-        child.kill()
-        resolve({ success: false, error: 'Authentication timed out' })
-      }, 300000)
-    })
+    return githubDeviceFlowLogin(event, authStore)
   })
 
   ipcMain.handle('git:gitlabLogin', async (event) => {

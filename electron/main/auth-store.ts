@@ -14,6 +14,7 @@ export interface AuthAccount {
   user: string
   avatar: string
   gitlabUrl?: string
+  token?: string
   lastUsedAt: string
 }
 

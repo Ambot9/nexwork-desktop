@@ -582,7 +582,8 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       content: (
         <div style={{ marginTop: 24 }}>
           <Paragraph type="secondary">
-            Select which repositories this feature will affect. Worktrees will be created from the current branch.
+            Select which repositories this feature will affect. Worktrees will be created from the current branch. You
+            can control which projects appear here from Settings → Workspace projects (Managed).
           </Paragraph>
 
           {Object.values(projectStatus).some((s) => !s.upToDate) && (
@@ -725,7 +726,12 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
           {availableProjects.length === 0 && (
             <Card>
-              <Text type="secondary">No projects found. Please configure your workspace first.</Text>
+              <Space direction="vertical">
+                <Text type="secondary">No managed projects available for this workspace.</Text>
+                <Text type="secondary">
+                  Go to Settings → Workspace projects and mark at least one project as Managed to use it here.
+                </Text>
+              </Space>
             </Card>
           )}
         </div>

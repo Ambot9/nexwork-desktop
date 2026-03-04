@@ -97,6 +97,8 @@ git push -u origin main
 
 #### Option B: Via Command Line (gh CLI)
 
+> Optional: gh is only needed if you prefer the CLI release flow. End users do not need it.
+
 ```bash
 # Install gh CLI if you haven't
 brew install gh

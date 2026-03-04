@@ -88,7 +88,8 @@ export function WorkspaceProjectsSettings({
             Projects in this workspace
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Nexwork scans inside your workspace folder to find Git projects. You can see how they are grouped here.
+            Nexwork scans inside your workspace folder to find Git projects. Mark projects as Managed to control which
+            ones appear in Create Feature.
           </Text>
         </div>
 
@@ -119,7 +120,7 @@ export function WorkspaceProjectsSettings({
                       onManagedProjectsChange(allProjectNames)
                     }}
                   >
-                    Manage all projects
+                    Mark all as managed
                   </Button>
                   <Button
                     size="small"
@@ -127,7 +128,7 @@ export function WorkspaceProjectsSettings({
                       onManagedProjectsChange([])
                     }}
                   >
-                    Clear all
+                    Mark none as managed
                   </Button>
                 </Space>
 

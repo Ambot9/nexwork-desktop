@@ -143,13 +143,17 @@ export function GitSyncModal({ ctx }: Props) {
                     />
                   }
                   title={
-                    <Space>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                       <GitBranch size={16} />
-                      <Text strong>{project.name}</Text>
+                      <Text strong style={{ whiteSpace: 'nowrap' }}>
+                        {project.name}
+                      </Text>
 
-                      {status?.branch && status.branch !== project.branch && (
+                      <Tag color="default">{project.baseBranch || 'staging'}</Tag>
+
+                      {status?.branch && (
                         <Tooltip title="Main repo currently checked out here">
-                          <Tag color="default">{status.branch}</Tag>
+                          <Tag color="default">Current: {status.branch}</Tag>
                         </Tooltip>
                       )}
 
@@ -166,7 +170,7 @@ export function GitSyncModal({ ctx }: Props) {
                           <Tag color="orange">{project.branch} (Not created)</Tag>
                         </Tooltip>
                       )}
-                    </Space>
+                    </div>
                   }
                   description={
                     <Space direction="vertical" size="small">

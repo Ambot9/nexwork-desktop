@@ -193,8 +193,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             config.workspaceRoot,
           )
           const exists = checkResult.output.trim() === 'exists'
-          let baseBranch = 'unknown'
-          if (exists) {
+          let baseBranch = project.baseBranch || 'unknown'
+          if (exists && !project.baseBranch) {
             const projectConfig = config.projects.find((p: any) => p.name === project.name)
             if (projectConfig) {
               const mainRepoPath = `${config.workspaceRoot}/${projectConfig.path}`
@@ -226,6 +226,29 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           status[project.name] = { exists, baseBranch }
         }
         setProjectWorktreeStatus(status)
+
+        // Backfill missing base branches from detected status
+        const updatedProjects = featureData.projects.map((project: any) => {
+          const detectedBase = status[project.name]?.baseBranch
+          const missingBase =
+            !project.baseBranch || project.baseBranch === 'current' || project.baseBranch === 'unknown'
+          if (missingBase && detectedBase && detectedBase !== 'unknown') {
+            return { ...project, baseBranch: detectedBase }
+          }
+          return project
+        })
+
+        const changed = updatedProjects.some((project: any, index: number) => {
+          return project.baseBranch !== featureData.projects[index].baseBranch
+        })
+
+        if (changed) {
+          try {
+            await window.nexworkAPI.features.update(featureData.name, { projects: updatedProjects })
+          } catch {
+            // ignore backfill errors
+          }
+        }
       } else {
         setFeatureFolderPath('')
         setProjectWorktreeStatus({})
@@ -641,7 +664,20 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       message.loading({ content: `Fetching ${projectName}...`, key: projectName, duration: 0 })
       const fetchResult = await window.nexworkAPI.runCommand('git fetch', workingDir)
       if (!fetchResult.success) {
-        message.error({ content: errMsg(Err.Offline, projectName), key: projectName, duration: 3 })
+        const errorText = (fetchResult.error || '').toLowerCase()
+        const isPermission =
+          errorText.includes('permission') ||
+          errorText.includes('not found') ||
+          errorText.includes('could not read from remote repository')
+        if (isPermission) {
+          message.error({
+            content: `${projectName}: Remote unavailable (not found or no permission)`,
+            key: projectName,
+            duration: 3,
+          })
+        } else {
+          message.error({ content: errMsg(Err.Offline, projectName), key: projectName, duration: 3 })
+        }
         setGitStatuses((prev) => ({ ...prev, [projectName]: { ahead: -1, behind: -1, branch } }))
         return
       }
@@ -691,6 +727,23 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         workingDir = `${config.workspaceRoot}/${project.path}`
         message.loading({ content: `${projectName}: Pulling...`, key: `pull-${projectName}`, duration: 0 })
       }
+      const remoteCheck = await window.nexworkAPI.runCommand('git ls-remote --exit-code origin', workingDir)
+      if (!remoteCheck.success) {
+        const errorText = (remoteCheck.error || '').toLowerCase()
+        const isPermission =
+          errorText.includes('permission') ||
+          errorText.includes('not found') ||
+          errorText.includes('could not read from remote repository')
+        message.error({
+          content: isPermission
+            ? `${projectName}: Remote unavailable (not found or no permission)`
+            : `${projectName}: Failed to reach remote`,
+          key: `pull-${projectName}`,
+          duration: 3,
+        })
+        return
+      }
+
       const result = await window.nexworkAPI.runCommand('git pull --no-edit', workingDir)
       if (result.success) {
         message.success({ content: `${projectName}: Pulled successfully`, key: `pull-${projectName}`, duration: 3 })

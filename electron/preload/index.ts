@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
   openInTerminal: (folderPath: string, terminalApp?: string) =>
     ipcRenderer.invoke('system:openInTerminal', folderPath, terminalApp),
   openInVSCode: (folderPath: string) => ipcRenderer.invoke('system:openInVSCode', folderPath),
+  openInFinder: (folderPath: string) => ipcRenderer.invoke('system:openInFinder', folderPath),
   openInIDE: (folderPath: string, ide: string) => ipcRenderer.invoke('system:openInIDE', folderPath, ide),
 
   system: {
@@ -171,6 +172,7 @@ declare global {
       ) => Promise<{ success: boolean; output: string; error: string | null }>
       openInTerminal: (folderPath: string, terminalApp?: string) => Promise<{ success: boolean; error?: string }>
       openInVSCode: (folderPath: string) => Promise<{ success: boolean; error?: string }>
+      openInFinder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
       openInIDE: (folderPath: string, ide: string) => Promise<{ success: boolean; error?: string }>
       system: {
         setAutoLaunch: (enabled: boolean) => Promise<any>

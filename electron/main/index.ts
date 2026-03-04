@@ -4,7 +4,7 @@ import { log } from './log'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import _os from 'os'
-import { registerIpcHandlers } from './ipc-handlers'
+import { registerIpcHandlers, currentWorkspaceRoot } from './ipc-handlers'
 import { createTray, destroyTray } from './tray'
 
 const { ConfigManager } = require('multi-repo-orchestrator/dist/core/config-manager.js')
@@ -46,10 +46,8 @@ function startAutoCleanupService() {
       // This will be empty until user sets it
       log.info('🔍 Checking for expired features...')
 
-      // Get workspace from the global in ipc-handlers
-      // We need to import it dynamically to get the current value
-      const ipcHandlers = require('./ipc-handlers')
-      const workspaceRoot = ipcHandlers.currentWorkspaceRoot
+      // Read the current workspace from ipc-handlers
+      const workspaceRoot = currentWorkspaceRoot
 
       if (!workspaceRoot) {
         log.info('⏭️ No workspace set yet, skipping cleanup')

@@ -333,11 +333,11 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
     )
   }
 
-  // ── Auth code view (GitHub / GitLab CLI waiting) ──
+  // ── Auth code view (GitHub device flow / GitLab CLI waiting) ──
   if (authCode) {
     const subtitle =
       authProvider === 'github'
-        ? 'Go to https://github.com/login/device and enter this one-time code.'
+        ? 'We opened GitHub in your browser. Enter this code to authorize Nexwork.'
         : authProvider === 'gitlab'
           ? 'Enter this one-time code on the GitLab page we opened.'
           : 'Enter this one-time code on the page we opened.'

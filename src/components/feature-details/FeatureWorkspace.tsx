@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function FeatureWorkspace({ ctx }: Props) {
-  const { feature, stats, featureFolderPath, projectWorktreeStatus } = ctx
+  const { feature, stats, featureFolderPath, projectWorktreeStatus, gitStatuses } = ctx
 
   if (!featureFolderPath || !feature) return null
 
@@ -58,9 +58,16 @@ export function FeatureWorkspace({ ctx }: Props) {
                       </Tag>
                     )}
                     {status?.exists && status.baseBranch && (
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {status.baseBranch}
-                      </Text>
+                      <Space size={6}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {status.baseBranch}
+                        </Text>
+                        {gitStatuses?.[project.name]?.branch && (
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            Current: {gitStatuses[project.name].branch}
+                          </Text>
+                        )}
+                      </Space>
                     )}
                   </Space>
                 </Space>

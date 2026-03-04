@@ -30,28 +30,41 @@ import {
   History,
   LogOut,
   User,
+  ShieldAlert,
 } from 'lucide-react'
 import { CreateFeatureModal } from './components/CreateFeatureModal'
 import { FeatureDetails } from './pages/FeatureDetails'
 import { Settings as SettingsPage } from './pages/Settings'
 import { ActivityLog } from './pages/ActivityLog'
 import { GitAuth } from './pages/GitAuth'
+import { WorkspaceHealth } from './pages/WorkspaceHealth'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { Feature } from './types'
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
 
-type View = 'dashboard' | 'feature-details' | 'settings' | 'activity' | 'git-auth'
+type View = 'dashboard' | 'feature-details' | 'settings' | 'activity' | 'git-auth' | 'workspace-health'
 
 type StatusFilter = 'all' | 'in_progress' | 'completed' | 'pending' | 'expired'
 
-const getMenuItems = (handlers: { onDashboard: () => void; onActivity: () => void; onSettings: () => void }) => [
+const getMenuItems = (handlers: {
+  onDashboard: () => void
+  onHealth: () => void
+  onActivity: () => void
+  onSettings: () => void
+}) => [
   {
     key: 'dashboard',
     icon: <Activity size={18} />,
     label: 'Dashboard',
     onClick: handlers.onDashboard,
+  },
+  {
+    key: 'workspace-health',
+    icon: <ShieldAlert size={18} />,
+    label: 'Workspace Health',
+    onClick: handlers.onHealth,
   },
   {
     key: 'activity',
@@ -289,6 +302,7 @@ function App() {
     () =>
       getMenuItems({
         onDashboard: handleBackToDashboard,
+        onHealth: () => setCurrentView('workspace-health'),
         onActivity: () => setCurrentView('activity'),
         onSettings: () => setCurrentView('settings'),
       }),
@@ -302,9 +316,11 @@ function App() {
       ? 'Settings'
       : currentView === 'activity'
         ? 'Activity'
-        : currentView === 'feature-details'
-          ? selectedFeatureId || 'Feature'
-          : 'Dashboard'
+        : currentView === 'workspace-health'
+          ? 'Workspace Health'
+          : currentView === 'feature-details'
+            ? selectedFeatureId || 'Feature'
+            : 'Dashboard'
 
   // Render content based on current view
   const renderContent = () => {
@@ -332,6 +348,14 @@ function App() {
       return (
         <ErrorBoundary fallbackTitle="Failed to load activity log">
           <ActivityLog />
+        </ErrorBoundary>
+      )
+    }
+
+    if (currentView === 'workspace-health') {
+      return (
+        <ErrorBoundary fallbackTitle="Failed to load workspace health">
+          <WorkspaceHealth onOpenSettings={() => setCurrentView('settings')} />
         </ErrorBoundary>
       )
     }

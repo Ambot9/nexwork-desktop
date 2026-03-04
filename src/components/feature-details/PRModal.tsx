@@ -96,18 +96,10 @@ export function PRModal({ ctx }: Props) {
         <Alert
           type="error"
           showIcon
-          message="GitHub CLI not found"
+          message="GitHub not available"
           description={
             <div>
-              <p>
-                The <code>gh</code> CLI is required to create pull requests.
-              </p>
-              <p>
-                Install it with: <code>brew install gh</code>
-              </p>
-              <p>
-                Then authenticate: <code>gh auth login</code>
-              </p>
+              <p>GitHub connection is required to create pull requests.</p>
             </div>
           }
         />
@@ -118,12 +110,10 @@ export function PRModal({ ctx }: Props) {
         <Alert
           type="warning"
           showIcon
-          message="GitHub CLI not authenticated"
+          message="GitHub not connected"
           description={
             <div>
-              <p>
-                Run <code>gh auth login</code> in your terminal to authenticate.
-              </p>
+              <p>Connect your GitHub account from the login screen to enable PR creation.</p>
             </div>
           }
         />
@@ -155,7 +145,7 @@ export function PRModal({ ctx }: Props) {
       style={{ maxWidth: 650 }}
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        {checking && <Alert message="Checking GitHub CLI status..." type="info" showIcon />}
+        {checking && <Alert message="Checking GitHub connection..." type="info" showIcon />}
 
         {renderGhNotReady()}
 

@@ -8,6 +8,8 @@ Beautiful desktop application for Nexwork - Multi-repository feature management 
 - **Feature Management**: Create, update, and complete features with intuitive dialogs
 - **Template System**: Choose from built-in templates or create custom ones
 - **Statistics**: Real-time git statistics, commit tracking, and progress monitoring
+- **Workspace Health**: Scan repo sync status, dirty trees, and remote access issues
+- **OAuth GitHub Login**: Device flow login without GitHub CLI requirements
 - **System Tray**: Quick access to features from your system tray
 - **Native Notifications**: Get notified when features are updated
 - **Cross-Platform**: Works on macOS, Windows, and Linux
