@@ -13,6 +13,7 @@ export function FeatureHeader({ ctx }: Props) {
   if (!feature) return null
 
   const progress = stats ? Math.round((stats.projectStatus.completed / stats.projectStatus.total) * 100) : 0
+  const projectCount = feature.projects.length
 
   const getProgressTag = () => {
     if (progress === 100) return <Tag color="success">Completed</Tag>
@@ -75,41 +76,70 @@ export function FeatureHeader({ ctx }: Props) {
   }
 
   return (
-    <div style={{ marginBottom: 20 }}>
-      {/* Back link */}
+    <div style={{ marginBottom: 24 }}>
       <Button
         type="text"
         icon={<ArrowLeft size={14} />}
         onClick={onBack}
         size="small"
-        style={{ padding: '4px 8px', marginBottom: 12, opacity: 0.6 }}
+        style={{ padding: '4px 8px', marginBottom: 12, opacity: 0.65 }}
       >
         Dashboard
       </Button>
 
-      {/* Title row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-        <Title level={3} style={{ margin: 0, wordBreak: 'break-word', fontWeight: 700 }}>
-          {feature.name}
-        </Title>
-        {getProgressTag()}
-      </div>
+      <div
+        style={{
+          padding: '20px 22px',
+          border: '1px solid rgba(15, 23, 42, 0.08)',
+          borderRadius: 20,
+          background:
+            'linear-gradient(135deg, rgba(79, 110, 247, 0.08) 0%, rgba(255, 255, 255, 0.96) 48%, rgba(82, 196, 26, 0.05) 100%)',
+          boxShadow: '0 16px 40px rgba(15, 23, 42, 0.05)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+          <Title level={2} style={{ margin: 0, wordBreak: 'break-word', fontWeight: 750, letterSpacing: '-0.02em' }}>
+            {feature.name}
+          </Title>
+          {getProgressTag()}
+        </div>
 
-      {/* Metadata row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          <Clock size={12} style={{ marginRight: 4, verticalAlign: '-1px' }} />
-          Created {new Date(feature.createdAt).toLocaleDateString()}
+        <Text
+          type="secondary"
+          style={{ display: 'block', fontSize: 14, lineHeight: 1.6, marginBottom: 14, maxWidth: 860 }}
+        >
+          Track progress, review repository changes, and manage worktrees for this feature from one place.
         </Text>
-        {feature.startedAt && (
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            Started {new Date(feature.startedAt).toLocaleDateString()}
-          </Text>
-        )}
-        {renderExpiration()}
-      </div>
 
-      {renderExpirationAlert()}
+        <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
+          <Tag color="blue" style={{ paddingInline: 10 }}>
+            {projectCount} project{projectCount !== 1 ? 's' : ''}
+          </Tag>
+          {stats && (
+            <Tag color="geekblue" style={{ paddingInline: 10 }}>
+              {stats.projectStatus.completed}/{stats.projectStatus.total} completed
+            </Tag>
+          )}
+          <Tag color="default" style={{ paddingInline: 10 }}>
+            Created {new Date(feature.createdAt).toLocaleDateString()}
+          </Tag>
+        </Space>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            <Clock size={12} style={{ marginRight: 4, verticalAlign: '-1px' }} />
+            Created {new Date(feature.createdAt).toLocaleDateString()}
+          </Text>
+          {feature.startedAt && (
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Started {new Date(feature.startedAt).toLocaleDateString()}
+            </Text>
+          )}
+          {renderExpiration()}
+        </div>
+
+        {renderExpirationAlert()}
+      </div>
     </div>
   )
 }

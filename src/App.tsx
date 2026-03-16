@@ -16,6 +16,10 @@ import {
   Skeleton,
   Input,
   Segmented,
+  Select,
+  Alert,
+  List,
+  Tag,
 } from 'antd'
 import {
   FolderGit2,
@@ -31,6 +35,7 @@ import {
   LogOut,
   User,
   ShieldAlert,
+  MessageSquareMore,
 } from 'lucide-react'
 import { CreateFeatureModal } from './components/CreateFeatureModal'
 import { FeatureDetails } from './pages/FeatureDetails'
@@ -40,13 +45,31 @@ import { GitAuth } from './pages/GitAuth'
 import { WorkspaceHealth } from './pages/WorkspaceHealth'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { Feature } from './types'
+import type { PluginDescriptor } from './plugins/types'
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
+const { TextArea } = Input
 
 type View = 'dashboard' | 'feature-details' | 'settings' | 'activity' | 'git-auth' | 'workspace-health'
 
 type StatusFilter = 'all' | 'in_progress' | 'completed' | 'pending' | 'expired'
+
+interface FeatureMemoryAskResponse {
+  status: string
+  verdict: string
+  answer: string
+  why: string[]
+  relatedProjects: string[]
+  possibleChecks: string[]
+  sources: Array<{
+    featureMemoryId: number
+    featureTitle: string
+    featureExternalId: string
+    section: string
+  }>
+  confidence: string
+}
 
 const getMenuItems = (handlers: {
   onDashboard: () => void
@@ -89,10 +112,17 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [authUser, setAuthUser] = useState('')
   const [authAvatar, setAuthAvatar] = useState('')
   const [_authProvider, setAuthProvider] = useState('')
   const [_authChecked, setAuthChecked] = useState(false)
+  const [askModalOpen, setAskModalOpen] = useState(false)
+  const [askLoading, setAskLoading] = useState(false)
+  const [askQuestion, setAskQuestion] = useState('')
+  const [askProjects, setAskProjects] = useState<string[]>([])
+  const [askAvailableProjects, setAskAvailableProjects] = useState<string[]>([])
+  const [askResponse, setAskResponse] = useState<FeatureMemoryAskResponse | null>(null)
   const {
     token: { colorBgContainer },
   } = theme.useToken()
@@ -141,7 +171,16 @@ function App() {
       // Ignore errors – config:load already handles first-time setup
     }
     await loadFeatures()
+    try {
+      const pluginData = await window.nexworkAPI.plugins.getAll()
+      setPlugins(pluginData)
+    } catch {
+      // Keep dashboard usable even if plugin state fails to load
+    }
   }, [])
+
+  const memstackPlugin = plugins.find((plugin) => plugin.id === 'memstack')
+  const featureMemoryReady = memstackPlugin?.enabled && memstackPlugin.status.state === 'ready'
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -206,6 +245,67 @@ function App() {
       setCurrentView('settings')
     }
   }, [])
+
+  const handleOpenAskFeatureMemory = useCallback(async () => {
+    try {
+      const [pluginData, config] = await Promise.all([
+        window.nexworkAPI.plugins.getAll(),
+        window.nexworkAPI.config.load(),
+      ])
+      setPlugins(pluginData)
+
+      const readyPlugin = pluginData.find((plugin: PluginDescriptor) => plugin.id === 'memstack')
+      if (!readyPlugin?.enabled || readyPlugin.status.state !== 'ready') {
+        message.warning('Feature Memory is not ready. Configure it in Settings first.')
+        setCurrentView('settings')
+        return
+      }
+
+      const managedProjects: string[] | undefined = config.userConfig?.managedProjects
+      const projects = (config.projects || [])
+        .map((project: { name: string }) => project.name)
+        .filter((name: string) => managedProjects === undefined || managedProjects.includes(name))
+
+      setAskAvailableProjects(projects)
+      setAskProjects([])
+      setAskQuestion('')
+      setAskResponse(null)
+      setAskModalOpen(true)
+    } catch {
+      message.error('Failed to open Feature Memory search')
+    }
+  }, [])
+
+  const handleAskFeatureMemory = useCallback(async () => {
+    if (!memstackPlugin?.enabled || memstackPlugin.status.state !== 'ready') {
+      message.warning('Feature Memory is not ready. Configure it in Settings first.')
+      return
+    }
+
+    if (!askQuestion.trim()) {
+      message.warning('Please enter a customer question first.')
+      return
+    }
+
+    try {
+      setAskLoading(true)
+      const result = await window.nexworkAPI.plugins.runAction(memstackPlugin.id, 'askQuestion', {
+        question: askQuestion.trim(),
+        projects: askProjects,
+      })
+
+      if (!result.success) {
+        message.error(result.error || 'Failed to ask Feature Memory')
+        return
+      }
+
+      setAskResponse(result.result as FeatureMemoryAskResponse)
+    } catch (error: any) {
+      message.error(error.message || 'Failed to ask Feature Memory')
+    } finally {
+      setAskLoading(false)
+    }
+  }, [askProjects, askQuestion, memstackPlugin])
 
   useEffect(() => {
     const handleOpenCreate = () => handleCreateFeature()
@@ -572,70 +672,106 @@ function App() {
         collapsedWidth="0"
         collapsed={sidebarCollapsed}
         onCollapse={(collapsed) => setSidebarCollapsed(collapsed)}
-        style={{ background: colorBgContainer, display: 'flex', flexDirection: 'column' }}
+        width={232}
+        style={{
+          background: colorBgContainer,
+          display: 'flex',
+          flexDirection: 'column',
+          borderRight: '1px solid rgba(128,128,128,0.08)',
+        }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          {/* App logo area — padded below macOS traffic lights */}
           <div
             style={{
-              height: 64,
-              marginTop: 28,
+              paddingTop: 42,
+              paddingBottom: 16,
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              padding: sidebarCollapsed ? 0 : '0 20px',
+              gap: 12,
+              paddingInline: sidebarCollapsed ? 0 : 18,
               justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-              borderBottom: '1px solid rgba(128,128,128,0.08)',
+              minHeight: 104,
             }}
           >
             {!sidebarCollapsed && (
               <>
                 <div
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 8,
+                    width: 38,
+                    height: 38,
+                    borderRadius: 12,
                     background: 'linear-gradient(135deg, var(--color-accent), #7c5cfc)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
+                    boxShadow: '0 10px 22px rgba(79, 110, 247, 0.24)',
                   }}
                 >
-                  <FolderGit2 size={15} style={{ color: '#fff' }} />
+                  <FolderGit2 size={17} style={{ color: '#fff' }} />
                 </div>
-                <Text strong style={{ fontSize: 16, letterSpacing: '-0.3px' }}>
-                  Nexwork
-                </Text>
+                <div style={{ minWidth: 0 }}>
+                  <Text strong style={{ fontSize: 19, letterSpacing: '-0.5px', display: 'block', lineHeight: 1.05 }}>
+                    Nexwork
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Multi-repo workspace
+                  </Text>
+                </div>
               </>
             )}
           </div>
 
-          {/* Navigation */}
+          {!sidebarCollapsed && (
+            <Text
+              type="secondary"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                paddingInline: 16,
+                marginBottom: 8,
+              }}
+            >
+              Navigation
+            </Text>
+          )}
+
           <Menu
             mode="inline"
             selectedKeys={[selectedMenuKey]}
             items={menuItems}
-            style={{ border: 'none', marginTop: 8, flex: 1 }}
+            style={{
+              border: 'none',
+              marginTop: 0,
+              flex: 1,
+              paddingInline: 8,
+              background: 'transparent',
+            }}
+            inlineIndent={14}
           />
 
-          {/* User & Version footer */}
           {!sidebarCollapsed && (
             <div
               style={{
-                padding: '12px 20px',
+                padding: '14px 16px 16px',
                 borderTop: '1px solid rgba(128,128,128,0.08)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(15,23,42,0.02) 100%)',
               }}
             >
               {authUser && (
                 <div style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                    Active account
+                  </Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     {authAvatar ? (
-                      <img src={authAvatar} alt="" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+                      <img src={authAvatar} alt="" style={{ width: 24, height: 24, borderRadius: '50%' }} />
                     ) : (
-                      <User size={14} style={{ opacity: 0.5 }} />
+                      <User size={15} style={{ opacity: 0.5 }} />
                     )}
-                    <Text style={{ fontSize: 12, flex: 1 }} ellipsis>
+                    <Text style={{ fontSize: 13, flex: 1 }} ellipsis>
                       {authUser}
                     </Text>
                   </div>
@@ -644,7 +780,7 @@ function App() {
                     size="small"
                     icon={<LogOut size={12} />}
                     onClick={handleLogout}
-                    style={{ padding: '2px 0', height: 'auto', fontSize: 11, color: 'inherit', opacity: 0.5 }}
+                    style={{ padding: '2px 0', height: 'auto', fontSize: 11, color: 'inherit', opacity: 0.62 }}
                   >
                     Switch Account
                   </Button>
@@ -673,9 +809,16 @@ function App() {
             {pageTitle}
           </Title>
           {currentView === 'dashboard' && (
-            <Button type="primary" icon={<Plus size={16} />} onClick={handleCreateFeature}>
-              Create Feature
-            </Button>
+            <Space>
+              {featureMemoryReady && (
+                <Button icon={<MessageSquareMore size={16} />} onClick={handleOpenAskFeatureMemory}>
+                  Ask Feature Memory
+                </Button>
+              )}
+              <Button type="primary" icon={<Plus size={16} />} onClick={handleCreateFeature}>
+                Create Feature
+              </Button>
+            </Space>
           )}
         </Header>
         <Content style={{ padding: 24, overflow: 'auto', maxHeight: 'calc(100vh - 64px)' }}>
@@ -688,6 +831,144 @@ function App() {
         onClose={() => setCreateModalOpen(false)}
         onSuccess={() => loadFeatures()}
       />
+      <Modal
+        title="Ask Feature Memory"
+        open={askModalOpen}
+        onCancel={() => {
+          setAskModalOpen(false)
+          setAskResponse(null)
+        }}
+        onOk={handleAskFeatureMemory}
+        okText="Ask"
+        confirmLoading={askLoading}
+        width={760}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert
+            type="info"
+            showIcon
+            message="Paste the customer question"
+            description="Use project filters when you know which systems are involved. Feature Memory will answer from stored requirements and implementation summaries."
+          />
+
+          <div>
+            <Text strong style={{ fontSize: 12 }}>
+              Customer Question
+            </Text>
+            <TextArea
+              rows={5}
+              placeholder="Example: Why did the user not get promotion SUMMER10?"
+              value={askQuestion}
+              onChange={(event) => setAskQuestion(event.target.value)}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+
+          <div>
+            <Text strong style={{ fontSize: 12 }}>
+              Related Projects
+            </Text>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Select related projects if you know them"
+              value={askProjects}
+              onChange={setAskProjects}
+              style={{ width: '100%', marginTop: 4 }}
+              options={askAvailableProjects.map((project) => ({ label: project, value: project }))}
+            />
+          </div>
+
+          {askResponse && (
+            <Card size="small">
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                  <Text strong>Answer</Text>
+                  <Space size={[8, 8]} wrap>
+                    <Tag
+                      color={
+                        askResponse.verdict === 'expected'
+                          ? 'blue'
+                          : askResponse.verdict === 'likely_bug'
+                            ? 'red'
+                            : 'default'
+                      }
+                    >
+                      {askResponse.verdict}
+                    </Tag>
+                    <Tag>{askResponse.confidence}</Tag>
+                  </Space>
+                </div>
+
+                <Text>{askResponse.answer}</Text>
+
+                {askResponse.why.length > 0 && (
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                      Why
+                    </Text>
+                    <List
+                      size="small"
+                      dataSource={askResponse.why}
+                      renderItem={(item) => <List.Item>{item}</List.Item>}
+                    />
+                  </div>
+                )}
+
+                {askResponse.relatedProjects.length > 0 && (
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                      Related Projects
+                    </Text>
+                    <Space size={[8, 8]} wrap>
+                      {askResponse.relatedProjects.map((project) => (
+                        <Tag key={project} color="blue">
+                          {project}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </div>
+                )}
+
+                {askResponse.possibleChecks.length > 0 && (
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                      Possible Checks
+                    </Text>
+                    <List
+                      size="small"
+                      dataSource={askResponse.possibleChecks}
+                      renderItem={(item) => <List.Item>{item}</List.Item>}
+                    />
+                  </div>
+                )}
+
+                {askResponse.sources.length > 0 && (
+                  <div>
+                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                      Sources
+                    </Text>
+                    <List
+                      size="small"
+                      dataSource={askResponse.sources}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Space direction="vertical" size={0}>
+                            <Text strong>{item.featureTitle}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {item.featureExternalId || `Feature Memory #${item.featureMemoryId}`} · {item.section}
+                            </Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  </div>
+                )}
+              </Space>
+            </Card>
+          )}
+        </Space>
+      </Modal>
     </Layout>
   )
 }

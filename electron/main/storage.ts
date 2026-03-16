@@ -17,6 +17,12 @@ interface AppSettings {
   perAccountWorkspaces?: {
     [accountId: string]: string
   }
+  plugins?: {
+    [pluginId: string]: {
+      enabled: boolean
+      config?: Record<string, any>
+    }
+  }
   gitAuthProvider: string
   gitAuthUser: string
   gitAuthAvatar: string
@@ -62,6 +68,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiModel: 'claude-3-5-sonnet-20241022',
   lastWorkspace: '',
   perAccountWorkspaces: {},
+  plugins: {},
   gitAuthProvider: '',
   gitAuthUser: '',
   gitAuthAvatar: '',

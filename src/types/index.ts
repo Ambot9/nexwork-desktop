@@ -7,6 +7,15 @@ export interface Feature {
   completedAt?: string
   expiresAt?: string
   ownerAccountId?: string
+  pluginRefs?: Record<
+    string,
+    {
+      tracked?: boolean
+      externalId?: string
+      lastSyncAt?: string
+      [key: string]: any
+    }
+  >
   stats?: {
     totalCommits?: number
     filesChanged?: number
@@ -100,6 +109,7 @@ export interface CreateFeatureDTO {
   template?: string
   selectedBranches?: Record<string, string>
   expiresAt?: string
+  pluginData?: Record<string, any>
 }
 
 export interface UpdateFeatureDTO {

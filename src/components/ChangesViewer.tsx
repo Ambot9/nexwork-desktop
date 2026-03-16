@@ -197,7 +197,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
   const renderInlineDiff = (fileChange: FileChange) => {
     if (!fileChange.diff) {
-      return <Empty description="No diff available" />
+      return <Empty description="No diff available for this file" />
     }
 
     const hunks = parseDiff(fileChange.diff)
@@ -318,7 +318,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
   const renderHunkDiff = (fileChange: FileChange) => {
     if (!fileChange.diff) {
-      return <Empty description="No diff available" />
+      return <Empty description="No diff available for this file" />
     }
 
     const hunks = parseDiff(fileChange.diff)
@@ -461,7 +461,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
 
   const renderSideBySideDiff = (fileChange: FileChange) => {
     if (!fileChange.diff) {
-      return <Empty description="No diff available" />
+      return <Empty description="No diff available for this file" />
     }
 
     const hunks = parseDiff(fileChange.diff)
@@ -620,7 +620,19 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
     }
 
     if (!projectDiff) {
-      return <Empty description="No changes found" />
+      return (
+        <Empty
+          description={
+            <Space direction="vertical" size={4}>
+              <Text strong>No changes found</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                This project does not currently have tracked file changes in its worktree.
+              </Text>
+            </Space>
+          }
+          style={{ padding: '36px 0 24px' }}
+        />
+      )
     }
 
     return (
@@ -776,7 +788,18 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
               (() => {
                 const fileChange = projectDiff.files.find((f) => f.path === selectedFile)
                 if (!fileChange) {
-                  return <Empty description="Select a file to view changes" />
+                  return (
+                    <Empty
+                      description={
+                        <Space direction="vertical" size={4}>
+                          <Text strong>Select a file</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            Choose a changed file on the left to inspect its diff.
+                          </Text>
+                        </Space>
+                      }
+                    />
+                  )
                 }
                 const fileName = selectedFile.split('/').pop() || selectedFile
                 const filePath = selectedFile.split('/').slice(0, -1).join('/')
@@ -815,9 +838,9 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
               <Empty
                 description={
                   <Space direction="vertical" size={4}>
-                    <Text type="secondary">Select a file from the list</Text>
+                    <Text strong>Select a file from the list</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      Click on any file to view its changes
+                      Click a changed file on the left to review the diff for this project.
                     </Text>
                   </Space>
                 }
@@ -851,7 +874,7 @@ function ChangesViewer({ featureName, projects }: ChangesViewerProps) {
   })
 
   return (
-    <Card title="Changes" style={{ marginBottom: 16 }}>
+    <Card title="Changes" style={{ marginBottom: 16, borderRadius: 18 }} bodyStyle={{ paddingTop: 12 }}>
       <Tabs activeKey={activeProject} onChange={setActiveProject} type="card" items={tabItems} />
     </Card>
   )

@@ -1,4 +1,4 @@
-import { Card, Space, Typography, Button, List, Badge, Dropdown } from 'antd'
+import { Card, Space, Typography, Button, List, Badge, Dropdown, Tag } from 'antd'
 import { FolderOpen, Terminal, Code, X, ChevronDown } from 'lucide-react'
 import type { FeatureDetailsContext } from './types'
 import { IDE_NAMES, TERMINAL_NAMES } from './types'
@@ -104,6 +104,7 @@ export function WorktreesList({ ctx }: Props) {
 
   return (
     <Card
+      bodyStyle={{ padding: '8px 20px 12px' }}
       title={
         <Space size={8}>
           <FolderOpen size={16} />
@@ -123,48 +124,76 @@ export function WorktreesList({ ctx }: Props) {
           </Button>
         </Dropdown>
       }
-      style={{ marginBottom: 16 }}
+      style={{ marginBottom: 0, borderRadius: 18, minHeight: '100%' }}
     >
       <List
         size="small"
         dataSource={activeWorktrees}
         renderItem={([projectName, path]) => (
-          <List.Item
-            style={{ padding: '10px 0' }}
-            actions={[
-              <Dropdown key="terminal" menu={{ items: buildTerminalMenuItems(projectName, ctx) }} trigger={['click']}>
-                <Button icon={<Terminal size={13} />} size="small" type="text">
-                  {getTerminalLabel(projectName, ctx)} <ChevronDown size={10} style={{ marginLeft: 2, opacity: 0.5 }} />
-                </Button>
-              </Dropdown>,
-              <Dropdown key="ide" menu={{ items: buildIDEMenuItems(projectName, ctx) }} trigger={['click']}>
-                <Button icon={<Code size={13} />} size="small" type="text">
-                  {getIDELabel(projectName, ctx)} <ChevronDown size={10} style={{ marginLeft: 2, opacity: 0.5 }} />
-                </Button>
-              </Dropdown>,
-              <Button
-                key="remove"
-                icon={<X size={13} />}
-                onClick={() => ctx.handleRemoveWorktree(projectName)}
-                size="small"
-                type="text"
-                danger
-              />,
-            ]}
-          >
-            <List.Item.Meta
-              avatar={<Badge status="success" />}
-              title={
-                <Text strong style={{ fontSize: 13 }}>
-                  {projectName}
-                </Text>
-              }
-              description={
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {path}
-                </Text>
-              }
-            />
+          <List.Item style={{ padding: '14px 0' }}>
+            <div style={{ width: '100%' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                  marginBottom: 6,
+                }}
+              >
+                <Space size={10} wrap>
+                  <Badge status="success" />
+                  <Text strong style={{ fontSize: 13 }}>
+                    {projectName}
+                  </Text>
+                  <Tag color="green" style={{ fontSize: 11, marginInlineEnd: 0 }}>
+                    Active
+                  </Tag>
+                </Space>
+
+                <Space size={4} wrap>
+                  <Dropdown
+                    key="terminal"
+                    menu={{ items: buildTerminalMenuItems(projectName, ctx) }}
+                    trigger={['click']}
+                  >
+                    <Button icon={<Terminal size={13} />} size="small" type="text">
+                      {getTerminalLabel(projectName, ctx)}{' '}
+                      <ChevronDown size={10} style={{ marginLeft: 2, opacity: 0.5 }} />
+                    </Button>
+                  </Dropdown>
+                  <Dropdown key="ide" menu={{ items: buildIDEMenuItems(projectName, ctx) }} trigger={['click']}>
+                    <Button icon={<Code size={13} />} size="small" type="text">
+                      {getIDELabel(projectName, ctx)} <ChevronDown size={10} style={{ marginLeft: 2, opacity: 0.5 }} />
+                    </Button>
+                  </Dropdown>
+                  <Button
+                    key="remove"
+                    icon={<X size={13} />}
+                    onClick={() => ctx.handleRemoveWorktree(projectName)}
+                    size="small"
+                    type="text"
+                    danger
+                  />
+                </Space>
+              </div>
+
+              <Text
+                type="secondary"
+                style={{
+                  fontSize: 11,
+                  display: 'block',
+                  paddingLeft: 24,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={path || undefined}
+              >
+                {path}
+              </Text>
+            </div>
           </List.Item>
         )}
       />

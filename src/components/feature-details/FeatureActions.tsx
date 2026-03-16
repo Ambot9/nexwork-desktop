@@ -1,4 +1,4 @@
-import { Button, Tooltip, Dropdown } from 'antd'
+import { Button, Tooltip, Dropdown, Space } from 'antd'
 import {
   GitPullRequest,
   RefreshCw,
@@ -52,33 +52,39 @@ export function FeatureActions({ ctx }: Props) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        justifyContent: 'space-between',
+        gap: 12,
         marginBottom: 24,
         flexWrap: 'wrap',
+        padding: '12px 14px',
+        border: '1px solid rgba(15, 23, 42, 0.08)',
+        borderRadius: 18,
+        background: 'rgba(255, 255, 255, 0.86)',
       }}
     >
-      {/* Primary action */}
-      <Button type="primary" icon={<GitPullRequest size={14} />} onClick={ctx.handleGitSync}>
-        Git Sync
-      </Button>
+      <Space wrap size={8}>
+        <Button type="primary" icon={<GitPullRequest size={14} />} onClick={ctx.handleGitSync}>
+          Git Sync
+        </Button>
+        <Button icon={<GitCommit size={14} />} onClick={ctx.handleCommitFeature}>
+          Commit
+        </Button>
+        <Button icon={<GitMerge size={14} />} onClick={ctx.handleMergeFeature}>
+          Merge
+        </Button>
+      </Space>
 
-      {/* Git actions */}
-      <Button icon={<GitCommit size={14} />} onClick={ctx.handleCommitFeature}>
-        Commit
-      </Button>
-      <Button icon={<GitMerge size={14} />} onClick={ctx.handleMergeFeature}>
-        Merge
-      </Button>
+      <Space wrap size={8}>
+        <Tooltip title="Refresh status">
+          <Button icon={<RefreshCw size={14} />} onClick={ctx.handleRefresh} loading={refreshing}>
+            Refresh
+          </Button>
+        </Tooltip>
 
-      {/* Refresh – icon-only */}
-      <Tooltip title="Refresh status">
-        <Button icon={<RefreshCw size={14} />} onClick={ctx.handleRefresh} loading={refreshing} />
-      </Tooltip>
-
-      {/* Overflow menu for less-frequent actions */}
-      <Dropdown menu={{ items: secondaryItems }} trigger={['click']} placement="bottomRight">
-        <Button icon={<MoreHorizontal size={14} />} />
-      </Dropdown>
+        <Dropdown menu={{ items: secondaryItems }} trigger={['click']} placement="bottomRight">
+          <Button icon={<MoreHorizontal size={14} />}>More</Button>
+        </Dropdown>
+      </Space>
     </div>
   )
 }

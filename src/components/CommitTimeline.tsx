@@ -113,7 +113,19 @@ function CommitTimeline({ featureName, projects }: CommitTimelineProps) {
     }
 
     if (!data || data.commits.length === 0) {
-      return <Empty description="No commits yet" />
+      return (
+        <Empty
+          description={
+            <Space direction="vertical" size={4}>
+              <Text strong>No commits yet</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Commits will appear here after work is recorded in this project worktree.
+              </Text>
+            </Space>
+          }
+          style={{ padding: '40px 0 28px' }}
+        />
+      )
     }
 
     const timelineItems = data.commits.map((commit) => ({
@@ -167,7 +179,7 @@ function CommitTimeline({ featureName, projects }: CommitTimelineProps) {
   })
 
   return (
-    <Card title="Commit Timeline" style={{ marginBottom: 16 }}>
+    <Card title="Commit Timeline" style={{ marginBottom: 16, borderRadius: 18 }} bodyStyle={{ paddingTop: 12 }}>
       <Tabs activeKey={activeProject} onChange={setActiveProject} type="card" items={tabItems} />
     </Card>
   )

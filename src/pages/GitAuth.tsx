@@ -53,8 +53,8 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
     cleanupRef.current = null
   }
 
-  const saveAndFinish = async (provider: string, user: string, avatar: string, gitlabUrl?: string) => {
-    await window.nexworkAPI.gitAuth.saveAuth({ provider, user, avatar, gitlabUrl: gitlabUrl || '' })
+  const saveAndFinish = async (provider: string, user: string, avatar: string, gitlabUrl?: string, token?: string) => {
+    await window.nexworkAPI.gitAuth.saveAuth({ provider, user, avatar, gitlabUrl: gitlabUrl || '', token })
     message.success(`Connected as ${user}`)
     onAuthenticated({ provider, user, avatar })
   }
@@ -189,6 +189,7 @@ export function GitAuth({ onAuthenticated }: GitAuthProps) {
         userData.username || 'GitLab User',
         userData.avatar_url || '',
         isSelfHosted ? baseUrl : undefined,
+        gitlabToken.trim(),
       )
     } catch (error: any) {
       message.error(error.message || 'GitLab login failed')

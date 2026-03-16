@@ -93,6 +93,15 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
     get: () => ipcRenderer.invoke('stats:get'),
   },
 
+  plugins: {
+    getAll: () => ipcRenderer.invoke('plugins:getAll'),
+    setEnabled: (pluginId: string, enabled: boolean) => ipcRenderer.invoke('plugins:setEnabled', pluginId, enabled),
+    updateConfig: (pluginId: string, config: Record<string, any>) =>
+      ipcRenderer.invoke('plugins:updateConfig', pluginId, config),
+    runAction: (pluginId: string, action: string, payload?: any) =>
+      ipcRenderer.invoke('plugins:runAction', pluginId, action, payload),
+  },
+
   // Terminal
   terminal: {
     create: (options: { cols: number; rows: number; cwd: string }) => ipcRenderer.invoke('terminal:create', options),
@@ -126,7 +135,7 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
     githubLogin: () => ipcRenderer.invoke('git:githubLogin'),
     githubLoginNew: () => ipcRenderer.invoke('git:githubLoginNew'),
     gitlabLogin: () => ipcRenderer.invoke('git:gitlabLogin'),
-    saveAuth: (data: { provider: string; user: string; avatar: string; gitlabUrl?: string }) =>
+    saveAuth: (data: { provider: string; user: string; avatar: string; gitlabUrl?: string; token?: string }) =>
       ipcRenderer.invoke('git:saveAuth', data),
     onAuthCode: (callback: (code: string) => void) => {
       const listener = (_: any, code: string) => callback(code)
@@ -200,6 +209,22 @@ declare global {
       appStats: {
         get: () => Promise<any>
       }
+      plugins: {
+        getAll: () => Promise<any[]>
+        setEnabled: (
+          pluginId: string,
+          enabled: boolean,
+        ) => Promise<{ success: boolean; plugins?: any[]; error?: string }>
+        updateConfig: (
+          pluginId: string,
+          config: Record<string, any>,
+        ) => Promise<{ success: boolean; plugins?: any[]; error?: string }>
+        runAction: (
+          pluginId: string,
+          action: string,
+          payload?: any,
+        ) => Promise<{ success: boolean; result?: any; error?: string }>
+      }
       git: {
         getConflictFiles: (workingDir: string) => Promise<{ success: boolean; files: string[] }>
       }
@@ -238,6 +263,7 @@ declare global {
           user: string
           avatar: string
           gitlabUrl?: string
+          token?: string
         }) => Promise<{ success: boolean; error?: string }>
         onAuthCode: (callback: (code: string) => void) => () => void
         logout: () => Promise<{ success: boolean; error?: string }>

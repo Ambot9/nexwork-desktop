@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, Tabs, Button, Space, Dropdown, Typography } from 'antd'
-import { Plus, ChevronDown, Terminal as TerminalIcon } from 'lucide-react'
+import { Plus, ChevronDown, Terminal as TerminalIcon, ChevronUp } from 'lucide-react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -26,6 +26,7 @@ interface TerminalTab {
 export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTerminalProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>('')
+  const [collapsed, setCollapsed] = useState(true)
   const terminalRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const nextTerminalId = useRef(1)
   const hasCreatedInitialTerminal = useRef(false)
@@ -286,6 +287,10 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
   }
 
   const handleTabChange = (tabId: string) => {
+    if (collapsed) {
+      setCollapsed(false)
+    }
+
     setActiveTabId(tabId)
 
     // Fit terminal when switching tabs
@@ -312,6 +317,20 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
     return () => window.removeEventListener('resize', handleResize)
   }, [tabs, activeTabId])
 
+  useEffect(() => {
+    if (collapsed) return
+
+    const activeTab = tabs.find((tab) => tab.id === activeTabId)
+    if (!activeTab) return
+
+    const timer = setTimeout(() => {
+      activeTab.fitAddon.fit()
+      activeTab.terminal.focus()
+    }, 80)
+
+    return () => clearTimeout(timer)
+  }, [collapsed, tabs, activeTabId])
+
   const items = tabs.map((tab) => ({
     key: tab.id,
     label: (
@@ -336,56 +355,86 @@ export function IntegratedTerminal({ feature, workspaceRoot }: IntegratedTermina
   }))
 
   return (
-    <Card style={{ marginTop: 16 }} styles={{ body: { padding: 0 } }}>
-      <Tabs
-        activeKey={activeTabId}
-        onChange={handleTabChange}
-        type="editable-card"
-        onEdit={(targetKey, action) => {
-          if (action === 'add') {
-            createNewTerminal()
-          } else {
-            closeTab(targetKey as string)
-          }
-        }}
-        items={items}
-        tabBarExtraContent={{
-          right: (
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: 'new-terminal',
-                    label: 'New Terminal (Default)',
-                    icon: <Plus size={14} />,
-                    onClick: () => createNewTerminal(),
-                  },
-                  {
-                    key: 'new-workspace',
-                    label: 'New Terminal (Workspace Root)',
-                    onClick: () => createNewTerminal(workspaceRoot),
-                  },
-                  ...feature.projects.map((project) => ({
-                    key: `project-${project.name}`,
-                    label: `New Terminal (${project.name})`,
-                    onClick: async () => {
-                      const config = await window.nexworkAPI.config.load()
-                      const projectConfig = config.projects.find((p: any) => p.name === project.name)
-                      if (projectConfig) {
-                        const projectPath = project.worktreePath || `${workspaceRoot}/${projectConfig.path}`
-                        createNewTerminal(projectPath)
-                      }
+    <Card
+      style={{ marginTop: 16, borderRadius: 18 }}
+      styles={{ body: { padding: collapsed ? '0 16px 12px' : 0 } }}
+      title={
+        <Space size={8}>
+          <TerminalIcon size={16} />
+          <span>Integrated Terminal</span>
+          <span style={{ fontSize: 12, opacity: 0.6 }}>
+            {tabs.length} tab{tabs.length !== 1 ? 's' : ''}
+          </span>
+        </Space>
+      }
+      extra={
+        <Button
+          type="text"
+          size="small"
+          icon={collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          onClick={() => setCollapsed((prev) => !prev)}
+        >
+          {collapsed ? 'Expand' : 'Collapse'}
+        </Button>
+      }
+    >
+      {collapsed ? (
+        <div style={{ paddingTop: 4 }}>
+          <span style={{ fontSize: 13, color: 'rgba(15, 23, 42, 0.62)' }}>
+            Keep the integrated terminal hidden until you need to run commands in this feature workspace.
+          </span>
+        </div>
+      ) : (
+        <Tabs
+          activeKey={activeTabId}
+          onChange={handleTabChange}
+          type="editable-card"
+          onEdit={(targetKey, action) => {
+            if (action === 'add') {
+              createNewTerminal()
+            } else {
+              closeTab(targetKey as string)
+            }
+          }}
+          items={items}
+          tabBarExtraContent={{
+            right: (
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'new-terminal',
+                      label: 'New Terminal (Default)',
+                      icon: <Plus size={14} />,
+                      onClick: () => createNewTerminal(),
                     },
-                  })),
-                ],
-              }}
-              trigger={['click']}
-            >
-              <Button type="text" size="small" icon={<ChevronDown size={14} />} style={{ marginRight: 8 }} />
-            </Dropdown>
-          ),
-        }}
-      />
+                    {
+                      key: 'new-workspace',
+                      label: 'New Terminal (Workspace Root)',
+                      onClick: () => createNewTerminal(workspaceRoot),
+                    },
+                    ...feature.projects.map((project) => ({
+                      key: `project-${project.name}`,
+                      label: `New Terminal (${project.name})`,
+                      onClick: async () => {
+                        const config = await window.nexworkAPI.config.load()
+                        const projectConfig = config.projects.find((p: any) => p.name === project.name)
+                        if (projectConfig) {
+                          const projectPath = project.worktreePath || `${workspaceRoot}/${projectConfig.path}`
+                          createNewTerminal(projectPath)
+                        }
+                      },
+                    })),
+                  ],
+                }}
+                trigger={['click']}
+              >
+                <Button type="text" size="small" icon={<ChevronDown size={14} />} style={{ marginRight: 8 }} />
+              </Dropdown>
+            ),
+          }}
+        />
+      )}
     </Card>
   )
 }

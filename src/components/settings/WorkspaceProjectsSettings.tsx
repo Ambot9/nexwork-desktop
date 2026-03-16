@@ -132,7 +132,7 @@ export function WorkspaceProjectsSettings({
                   </Button>
                 </Space>
 
-                <Collapse bordered defaultActiveKey={visibleGroups.map((g) => g.groupName)}>
+                <Collapse bordered>
                   {visibleGroups.map((group) => {
                     const groupNames = group.projects.map((p) => p.name)
                     const managedCount = groupNames.filter((name) => managedSet.has(name)).length

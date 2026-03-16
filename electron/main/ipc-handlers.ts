@@ -8,6 +8,7 @@ import { notifyFeatureCreated, notifyFeatureCompleted, notifyProjectStatusChange
 import { promisify } from 'util'
 import { exec } from 'child_process'
 import { log } from './log'
+import { dispatchPluginEvent, listPlugins, runPluginAction, setPluginEnabled, updatePluginConfig } from './plugins/host'
 import {
   validateWorkspacePath,
   sanitizeFeatureName,
@@ -687,6 +688,30 @@ export function registerIpcHandlers() {
         }
       }
 
+      const pluginResults = await dispatchPluginEvent('feature.created', {
+        feature: newFeature,
+        pluginData: data.pluginData || {},
+        workspaceRoot: currentWorkspaceRoot,
+      })
+
+      const pluginRefs = pluginResults.reduce(
+        (acc, entry) => {
+          if (entry.result?.pluginRef) {
+            acc[entry.pluginId] = entry.result.pluginRef
+          }
+          return acc
+        },
+        {} as Record<string, any>,
+      )
+
+      if (Object.keys(pluginRefs).length > 0) {
+        newFeature.pluginRefs = {
+          ...(newFeature.pluginRefs || {}),
+          ...pluginRefs,
+        }
+        configManager.updateFeature(newFeature.name, { pluginRefs: newFeature.pluginRefs })
+      }
+
       updateTrayWithFeatures()
       notifyFeatureCreated(newFeature.name)
 
@@ -761,6 +786,11 @@ export function registerIpcHandlers() {
       configManager.deleteFeature(name)
       updateTrayWithFeatures()
 
+      await dispatchPluginEvent('feature.deleted', {
+        featureName: name,
+        workspaceRoot: currentWorkspaceRoot,
+      })
+
       log.info(`✅ Feature ${name} deleted successfully`)
     } catch (error: any) {
       log.error('Failed to delete feature:', error)
@@ -797,6 +827,11 @@ export function registerIpcHandlers() {
         // Mark all projects as completed
         feature.projects.forEach((project: any) => {
           configManager.updateProjectStatus(name, project.name, 'completed')
+        })
+
+        await dispatchPluginEvent('feature.completed', {
+          feature,
+          workspaceRoot: currentWorkspaceRoot,
         })
 
         updateTrayWithFeatures()
@@ -878,6 +913,13 @@ export function registerIpcHandlers() {
 
       const feature = configManager.getFeature(featureName)
       if (feature) {
+        await dispatchPluginEvent('project.status.updated', {
+          feature,
+          featureName,
+          projectName,
+          status,
+          workspaceRoot: currentWorkspaceRoot,
+        })
         updateTrayWithFeatures()
         notifyProjectStatusChanged(feature.name, projectName, status)
       }
@@ -1821,6 +1863,65 @@ export function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('plugins:getAll', async () => {
+    try {
+      return await listPlugins()
+    } catch (error: any) {
+      log.error('Failed to list plugins:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('plugins:setEnabled', async (_, pluginId: string, enabled: boolean) => {
+    try {
+      setPluginEnabled(pluginId, enabled)
+      const plugins = await listPlugins()
+      return {
+        success: true,
+        plugins,
+      }
+    } catch (error: any) {
+      log.error('Failed to set plugin enabled state:', error)
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+  })
+
+  ipcMain.handle('plugins:updateConfig', async (_, pluginId: string, config: Record<string, any>) => {
+    try {
+      updatePluginConfig(pluginId, config)
+      const plugins = await listPlugins()
+      return {
+        success: true,
+        plugins,
+      }
+    } catch (error: any) {
+      log.error('Failed to update plugin config:', error)
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+  })
+
+  ipcMain.handle('plugins:runAction', async (_, pluginId: string, action: string, payload: any) => {
+    try {
+      const result = await runPluginAction(pluginId, action, payload)
+      return {
+        success: true,
+        result,
+      }
+    } catch (error: any) {
+      log.error('Failed to run plugin action:', error)
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+  })
+
   // Feature history storage
   ipcMain.handle('features:saveHistory', async (_, feature: any) => {
     try {
@@ -2322,6 +2423,7 @@ export function registerIpcHandlers() {
         user: string
         avatar: string
         gitlabUrl?: string
+        token?: string
       },
     ) => {
       try {
@@ -2338,6 +2440,7 @@ export function registerIpcHandlers() {
             provider: 'github' as const,
             user: data.user,
             avatar: data.avatar,
+            token: data.token || accounts[existingIndex]?.token,
             lastUsedAt: now,
           }
           if (existingIndex >= 0) {
@@ -2357,6 +2460,7 @@ export function registerIpcHandlers() {
             user: data.user,
             avatar: data.avatar,
             gitlabUrl: data.gitlabUrl,
+            token: data.token || accounts[existingIndex]?.token,
             lastUsedAt: now,
           }
           if (existingIndex >= 0) {

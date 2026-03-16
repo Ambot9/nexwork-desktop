@@ -19,13 +19,21 @@ interface StatCardProps {
 
 function StatCard({ icon, iconBg, label, value, extra, valueColor }: StatCardProps) {
   return (
-    <Card bodyStyle={{ padding: '16px 20px' }} style={{ height: '100%' }}>
+    <Card
+      bodyStyle={{ padding: '18px 20px' }}
+      style={{
+        height: '100%',
+        borderRadius: 18,
+        border: '1px solid rgba(15, 23, 42, 0.08)',
+        boxShadow: '0 10px 26px rgba(15, 23, 42, 0.04)',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
         <div
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
+            width: 42,
+            height: 42,
+            borderRadius: 12,
             background: iconBg,
             display: 'flex',
             alignItems: 'center',
@@ -36,10 +44,10 @@ function StatCard({ icon, iconBg, label, value, extra, valueColor }: StatCardPro
           {icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>
+          <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4, letterSpacing: '0.03em' }}>
             {label}
           </Text>
-          <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: valueColor }}>{value}</div>
+          <div style={{ fontSize: 24, fontWeight: 760, lineHeight: 1.1, color: valueColor || '#111827' }}>{value}</div>
           {extra}
         </div>
       </div>

@@ -1345,7 +1345,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   }
 
   return (
-    <div style={{ maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '8px 0 32px', overflowX: 'hidden' }}>
       <FeatureHeader ctx={ctx} />
       <FeatureActions ctx={ctx} />
       <RunCommandModal ctx={ctx} />
@@ -1354,15 +1354,26 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       <PRModal ctx={ctx} />
       <ConflictViewer ctx={ctx} />
       <FeatureStatsRow ctx={ctx} />
-      <FeatureWorkspace ctx={ctx} />
-      <WorktreesList ctx={ctx} />
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+          gap: 16,
+          alignItems: 'start',
+          marginBottom: 16,
+        }}
+      >
+        <FeatureWorkspace ctx={ctx} />
+        <WorktreesList ctx={ctx} />
+      </div>
 
       {feature && <ChangesViewer featureName={featureName} projects={feature.projects} />}
 
       {feature && <CommitTimeline featureName={featureName} projects={feature.projects} />}
 
       {workspaceRoot && (
-        <div data-terminal-section>
+        <div data-terminal-section style={{ marginTop: 8 }}>
           <IntegratedTerminal feature={feature} workspaceRoot={workspaceRoot} />
         </div>
       )}

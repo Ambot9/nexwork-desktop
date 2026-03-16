@@ -16,6 +16,7 @@ import {
   Select,
   Spin,
   DatePicker,
+  Switch,
 } from 'antd'
 import {
   FileText,
@@ -26,8 +27,10 @@ import {
   CheckCircle,
   ArrowDown,
   RefreshCw,
+  Database,
 } from 'lucide-react'
 import type { CreateFeatureDTO } from '../types'
+import type { PluginDescriptor } from '../plugins/types'
 
 const { Text, Paragraph } = Typography
 const { Step } = Steps
@@ -73,6 +76,8 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     Record<string, { ahead: number; behind: number; upToDate: boolean; noRemote?: boolean }>
   >({})
   const [projectStatusLoading, setProjectStatusLoading] = useState<Record<string, boolean>>({})
+  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
+  const [preparingRequirement, setPreparingRequirement] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -94,8 +99,12 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       setAvailableProjects(projects)
 
       // Load templates
-      const templates = await window.nexworkAPI.templates.getAll()
+      const [templates, pluginData] = await Promise.all([
+        window.nexworkAPI.templates.getAll(),
+        window.nexworkAPI.plugins.getAll(),
+      ])
       setAvailableTemplates(templates)
+      setPlugins(pluginData)
 
       // PHASE 1: Load current branches ONLY (fast, no network calls)
       // MUST complete before phase 3 because status check needs branch info
@@ -389,9 +398,23 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const handleNext = async () => {
     try {
       // Validate only the fields in the current step
-      if (currentStep === 0) {
+      const stepKey = steps[currentStep]?.key
+
+      if (stepKey === 'basic-info') {
         await form.validateFields(['featureName', 'customId', 'description'])
-      } else if (currentStep === 1) {
+      } else if (stepKey === 'memstack') {
+        const tracked = form.getFieldValue('memstackTrack')
+        if (tracked) {
+          await form.validateFields(['memstackRequirement'])
+          const requirementSummary = form.getFieldValue('memstackRequirementSummary')
+          if (!requirementSummary) {
+            const prepared = await handlePrepareRequirement()
+            if (!prepared) {
+              return
+            }
+          }
+        }
+      } else if (stepKey === 'select-projects') {
         await form.validateFields(['projects'])
 
         // Check if any selected projects are behind remote
@@ -410,9 +433,6 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         }
       }
 
-      // Log current form values
-      const _currentValues = form.getFieldsValue()
-
       setCurrentStep(currentStep + 1)
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -422,6 +442,59 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
   const handlePrev = () => {
     setCurrentStep(currentStep - 1)
+  }
+
+  const memstackPlugin = plugins.find(
+    (plugin) => plugin.id === 'memstack' && plugin.enabled && plugin.featureCreateStep,
+  )
+  const memstackStepEnabled = Boolean(memstackPlugin && memstackPlugin.status.state === 'ready')
+  const readyMemstackPlugin = memstackStepEnabled ? memstackPlugin : undefined
+
+  const handlePrepareRequirement = async (): Promise<boolean> => {
+    if (!readyMemstackPlugin) {
+      return true
+    }
+
+    try {
+      setPreparingRequirement(true)
+      const values = form.getFieldsValue()
+      const result = await window.nexworkAPI.plugins.runAction(readyMemstackPlugin.id, 'prepareRequirement', {
+        title: values.featureName,
+        description: values.description,
+        requirement: values.memstackRequirement,
+        projects: values.projects || [],
+        productName: values.memstackProductName,
+        customerName: values.memstackCustomerName,
+        tags: values.memstackTags
+          ? String(values.memstackTags)
+              .split(',')
+              .map((tag) => tag.trim())
+              .filter(Boolean)
+          : [],
+      })
+
+      if (!result.success) {
+        message.error(result.error || 'Failed to prepare requirement summary')
+        return false
+      }
+
+      const summary =
+        result.result?.summary || result.result?.requirementSummary || result.result?.content || result.result?.text
+
+      if (!summary || typeof summary !== 'string') {
+        message.error('Feature Memory service did not return a requirement summary')
+        return false
+      }
+
+      form.setFieldValue('memstackRequirementSummary', summary.trim())
+      message.success('Requirement summary prepared')
+      return true
+    } catch (error: any) {
+      message.error(error.message || 'Failed to prepare requirement summary')
+      return false
+    } finally {
+      setPreparingRequirement(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -448,6 +521,25 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         template: selectedTemplate,
         selectedBranches: selectedBranches,
         expiresAt: values.expiresAt ? values.expiresAt.toISOString() : undefined,
+        pluginData: {},
+      }
+
+      if (values.memstackTrack && readyMemstackPlugin) {
+        dto.pluginData = {
+          memstack: {
+            tracked: true,
+            requirement: values.memstackRequirement,
+            requirementSummary: values.memstackRequirementSummary,
+            productName: values.memstackProductName,
+            customerName: values.memstackCustomerName,
+            tags: values.memstackTags
+              ? String(values.memstackTags)
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .filter(Boolean)
+              : [],
+          },
+        }
       }
 
       await window.nexworkAPI.features.create(dto)
@@ -457,6 +549,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       form.resetFields()
       setCurrentStep(0)
       setUseCustomId(false)
+      setPlugins([])
       onSuccess()
       onClose()
     } catch (error: any) {
@@ -471,6 +564,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     form.resetFields()
     setCurrentStep(0)
     setUseCustomId(false)
+    setPlugins([])
     onClose()
   }
 
@@ -518,6 +612,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
   const steps = [
     {
+      key: 'basic-info',
       title: 'Basic Info',
       icon: <FileText size={20} />,
       content: (
@@ -577,6 +672,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       ),
     },
     {
+      key: 'select-projects',
       title: 'Select Projects',
       icon: <FolderGit2 size={20} />,
       content: (
@@ -737,7 +833,129 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         </div>
       ),
     },
+    ...(readyMemstackPlugin
+      ? [
+          {
+            key: 'memstack',
+            title: readyMemstackPlugin.name,
+            icon: <Database size={20} />,
+            content: (
+              <div style={{ marginTop: 24 }}>
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={readyMemstackPlugin.name}
+                    description="Selected projects will be used as the relationship context for this feature memory record."
+                  />
+
+                  <Form.Item noStyle shouldUpdate>
+                    {({ getFieldValue }) => {
+                      const selectedProjects = (getFieldValue('projects') || []) as string[]
+
+                      return selectedProjects.length > 0 ? (
+                        <Card size="small">
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            <Text strong>Related Projects</Text>
+                            <Space size={[8, 8]} wrap>
+                              {selectedProjects.map((project) => (
+                                <Tag key={project} color="blue">
+                                  {project}
+                                </Tag>
+                              ))}
+                            </Space>
+                          </Space>
+                        </Card>
+                      ) : null
+                    }}
+                  </Form.Item>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 16px',
+                      border: '1px solid rgba(127,127,127,0.2)',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div>
+                      <Text strong>Track in Feature Memory</Text>
+                      <br />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Capture and summarize customer requirements after project selection.
+                      </Text>
+                    </div>
+                    <Form.Item name="memstackTrack" valuePropName="checked" initialValue={false} style={{ margin: 0 }}>
+                      <Switch />
+                    </Form.Item>
+                  </div>
+
+                  <Form.Item noStyle shouldUpdate>
+                    {({ getFieldValue }) =>
+                      getFieldValue('memstackTrack') ? (
+                        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                          <Form.Item
+                            label="Requirement Items"
+                            name="memstackRequirement"
+                            rules={[{ required: true, message: 'Please paste the customer requirement items' }]}
+                          >
+                            <TextArea
+                              rows={10}
+                              placeholder="Paste the customer requirement, plan, or feature request here..."
+                            />
+                          </Form.Item>
+
+                          <Form.Item label="Product Name" name="memstackProductName">
+                            <Input placeholder="e.g., Coloris" />
+                          </Form.Item>
+
+                          <Form.Item label="Customer / Request Source" name="memstackCustomerName">
+                            <Input placeholder="e.g., Internal, Client ABC, Sales request" />
+                          </Form.Item>
+
+                          <Form.Item label="Tags (optional)" name="memstackTags">
+                            <Input placeholder="promotion, checkout, business-rule" />
+                          </Form.Item>
+
+                          <div
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+                          >
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              Nexwork will prepare a concise requirement summary using the selected project context.
+                            </Text>
+                            <Button loading={preparingRequirement} onClick={handlePrepareRequirement}>
+                              Summarize Requirement
+                            </Button>
+                          </div>
+
+                          <Form.Item
+                            label="Requirement Summary"
+                            name="memstackRequirementSummary"
+                            rules={[{ required: true, message: 'Requirement summary is required before continuing' }]}
+                          >
+                            <TextArea
+                              rows={8}
+                              placeholder="The prepared summary from the Feature Memory service will appear here..."
+                            />
+                          </Form.Item>
+                        </Space>
+                      ) : (
+                        <Text type="secondary">
+                          Enable feature memory tracking to capture requirement context for this feature.
+                        </Text>
+                      )
+                    }
+                  </Form.Item>
+                </Space>
+              </div>
+            ),
+          },
+        ]
+      : []),
     {
+      key: 'choose-template',
       title: 'Choose Template',
       icon: <Settings size={20} />,
       content: (
