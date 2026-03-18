@@ -1,345 +1,91 @@
 # Nexwork Desktop - Project Summary
 
-## 🎉 What We Built
+## Current product shape
 
-A beautiful, cross-platform desktop application for **Nexwork** using Electron + React + TypeScript!
+Nexwork Desktop is no longer just an early Electron dashboard. It is now a workspace-centered desktop tool for multi-repository feature execution with:
 
-## ✅ Completed (Phase 1)
+- per-account GitHub / GitLab authentication
+- per-account workspace restoration
+- feature creation and feature lifecycle management
+- workspace health and repo status visibility
+- an internal extension system
+- a built-in Feature Memory integration that talks to MemStack
 
-### 1. **Project Setup** ✅
-- Electron 28 + React 18 + TypeScript
-- Vite for fast development and HMR
-- Ant Design for professional UI components
-- Lucide React for icons
-- Full TypeScript type safety
+## What was added recently
 
-### 2. **Architecture Design** ✅
-- Clean separation: Main Process / Preload / Renderer
-- Secure IPC communication via contextBridge
-- Modular component structure
-- Type-safe API contracts
+### Multi-account Git behavior
 
-### 3. **Main Window & Dashboard** ✅
-- Beautiful dashboard with statistics cards
-- Feature list with progress bars
-- Status badges (pending, in progress, completed)
-- Project status visualization
-- Responsive layout with sidebar navigation
+- GitHub and GitLab accounts can be saved and switched
+- feature visibility is scoped by account ownership
+- workspaces are stored per account
+- self-hosted GitLab support is included
 
-### 4. **Electron Main Process** ✅
-- Window management
-- IPC handlers setup
-- Development mode with DevTools
-- Proper window configuration
+### Extension system
 
-### 5. **Preload Script** ✅
-- Secure contextBridge exposure
-- Type-safe API for renderer
-- All CRUD operations defined
-- Event system for real-time updates
+- plugin host, registry, manifest types, and lifecycle hooks now live under `electron/main/plugins`
+- extensions can be enabled, configured, and invoked through IPC
+- renderer-facing extension descriptors are exposed through preload
+- the Settings page now uses an extension-library style UX
 
-## 📊 Current State
+### Feature Memory flow
 
-### Recent Additions (Multi-account Git)
+- the first built-in extension is Feature Memory
+- it reuses the active Nexwork Git account to list repositories
+- users pick a single storage repository for structured markdown
+- feature creation can collect requirement items after project selection
+- dashboard users can ask Feature Memory support-style questions
+- feature lifecycle sync events are sent to MemStack
 
-- GitHub and GitLab authentication now support multiple saved accounts with a Google-style account picker.
-- Features are scoped per Git account using an `ownerAccountId`, so each account only sees its own features.
-- Workspace roots are stored per account via `perAccountWorkspaces`, with local mode kept separate.
-- Self-hosted GitLab instances (including `http://` URLs) now work properly for avatars via a relaxed CSP.
-- The Settings page workspace selector now writes per-account workspace paths, and the app reloads workspace + features when accounts change.
+### UI refinement
 
-### File Structure
-```
-nexwork-desktop/
-├── electron/
-│   ├── main/
-│   │   └── index.ts           ✅ Main process with window management
-│   └── preload/
-│       └── index.ts           ✅ Secure IPC bridge
-├── src/
-│   ├── App.tsx                ✅ Beautiful dashboard UI
-│   ├── main.tsx               ✅ React entry point
-│   ├── types/
-│   │   └── index.ts           ✅ TypeScript definitions
-│   └── styles/
-│       └── index.css          ✅ Global styles
-├── index.html                 ✅ HTML template
-├── vite.config.ts             ✅ Vite configuration
-├── tsconfig.json              ✅ TypeScript config
-├── package.json               ✅ Dependencies & scripts
-└── README.md                  ✅ Documentation
+- tighter sidebar and account footer
+- clearer settings hierarchy
+- improved feature details layout and hierarchy
+- side-by-side workspace and worktree cards
+- cleaner worktree and workspace rows
+- collapsible integrated terminal
+- better empty states for changes and commit timeline
+
+## Main implementation areas
+
+```text
+electron/main/ipc-handlers.ts
+electron/main/plugins/
+electron/preload/index.ts
+src/App.tsx
+src/components/CreateFeatureModal.tsx
+src/components/settings/PluginSettings.tsx
+src/pages/FeatureDetails.tsx
+src/components/ChangesViewer.tsx
+src/components/CommitTimeline.tsx
 ```
 
-### Features Implemented
+## Runtime model
 
-#### Dashboard View
-- **Statistics Cards**:
-  - Total Features count
-  - In Progress count
-  - Completed count
-  - Pending count
+### Nexwork owns
 
-- **Feature Cards**:
-  - Feature ID and name
-  - Progress bar with percentage
-  - Project status indicators
-  - Creation date
-  - Hover effects
+- feature workflow
+- git account reuse
+- workspace and feature UI
+- worktree and branch operations
+- extension invocation
 
-- **Empty State**:
-  - Icon placeholder
-  - "Create Feature" call-to-action
+### MemStack owns
 
-#### UI Components
-- Sidebar navigation (Dashboard, Features, Templates, Settings)
-- Header with "Create Feature" button
-- Responsive layout
-- Professional color scheme
-- Status badges with icons
-- Progress indicators
+- feature-memory storage
+- structured markdown generation
+- requirement and implementation history
+- topic wiki documents
+- ask / retrieval backend
 
-## 🔄 IPC API (Defined & Ready)
+## Release state
 
-### Features API
-```typescript
-features.getAll() - Get all features
-features.getById(id) - Get single feature
-features.create(data) - Create new feature
-features.update(id, data) - Update feature
-features.delete(id) - Delete feature
-features.complete(id, cleanup) - Complete feature
-```
+- current desktop version: `1.1.0-beta.1`
+- website download points to the latest GitHub release, not the latest branch commit
+- publishing a new desktop release is what updates the website download target
 
-### Projects API
-```typescript
-projects.updateStatus(featureId, projectName, status)
-projects.createWorktree(featureId, projectName)
-projects.removeWorktree(featureId, projectName)
-```
+## Next practical focus
 
-### Templates API
-```typescript
-templates.getAll() - Get all templates
-templates.getCustom() - Get custom templates
-templates.create(name, content) - Create template
-templates.delete(name) - Delete template
-templates.preview(template, data) - Preview template
-```
-
-### Config API
-```typescript
-config.load() - Load configuration
-config.save(config) - Save configuration
-config.setWorkspace(path) - Set workspace path
-```
-
-### Stats API
-```typescript
-stats.getFeatureStats(featureId) - Get feature statistics
-stats.getGitStats(featureId, projectName) - Get git stats
-```
-
-## 🚀 How to Run
-
-### Development
-```bash
-cd /Users/mac/Dev/Build/nexwork-desktop
-npm run dev
-```
-
-This will:
-1. Start Vite dev server on port 5173
-2. Launch Electron app
-3. Open DevTools automatically
-4. Enable hot module replacement
-
-### Build
-```bash
-npm run build
-```
-
-This will:
-1. Compile TypeScript
-2. Bundle React app with Vite
-3. Package Electron app with electron-builder
-
-## 📸 Current UI (Live!)
-
-The app is currently showing:
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Nexwork                                    [Create Feature] │
-├──────────────────────────────────────────────────────────────┤
-│ │                                                             │
-│ │  Dashboard                                                  │
-│ │                                                             │
-│ │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────┐ │
-│ │  │   Total    │ │ In Progress│ │  Completed │ │ Pending │ │
-│ │  │     1      │ │      1     │ │      0     │ │    0    │ │
-│ │  └────────────┘ └────────────┘ └────────────┘ └─────────┘ │
-│ │                                                             │
-│ │  Recent Features                                            │
-│ │  ┌────────────────────────────────────────────────────────┐│
-│ │  │ ● Demo Feature (DEMO-001)                     50%     ││
-│ │  │   🔄 frontend  ⏳ backend                     [====  ] ││
-│ │  │   Created: 2/3/2026                                   ││
-│ │  └────────────────────────────────────────────────────────┘│
-│ │                                                             │
-└──┴─────────────────────────────────────────────────────────────┘
-```
-
-## 🎯 Next Steps (Current)
-
-### High Priority
-1. Finalize per-account workspace behavior
-   - Ensure the selected workspace root reliably appears in Settings for each account.
-   - Make sure switching accounts consistently swaps workspace + features with no data leakage.
-
-2. Harden multi-account flows
-   - Exercise GitHub and GitLab (including self-hosted) account pickers.
-   - Verify device-code UX and error handling when CLIs are missing or unauthenticated.
-
-3. End-to-end testing
-   - Run through feature creation/completion across two Git accounts and local mode.
-   - Confirm per-account features and worktrees behave correctly.
-
-### Medium / Later
-4. System tray and notifications polish
-5. Template manager UX improvements
-6. Build, packaging, and distribution polish (icons, installers, auto-update)
-
-## 🛠️ Technologies Used
-
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| Electron | 28.1.4 | Desktop framework |
-| React | 18.2.0 | UI framework |
-| TypeScript | 5.3.3 | Type safety |
-| Vite | 5.0.11 | Build tool |
-| Ant Design | 5.12.8 | UI components |
-| Lucide React | 0.312.0 | Icons |
-| Zustand | 4.5.0 | State management |
-| electron-builder | 24.9.1 | Packaging |
-
-## 📝 Key Decisions
-
-### Why Electron?
-- Cross-platform (Mac, Windows, Linux)
-- Access to Node.js APIs
-- Native file system access
-- System tray support
-- Can reuse Nexwork CLI core
-
-### Why React?
-- Component reusability
-- Large ecosystem
-- Fast development
-- Easy state management
-
-### Why Vite?
-- Instant HMR
-- Fast builds
-- Modern tooling
-- Great DX
-
-### Why Ant Design?
-- Professional components
-- Built-in dark mode
-- Desktop-optimized
-- Comprehensive library
-
-## 🔐 Security Measures
-
-- ✅ Context isolation enabled
-- ✅ Node integration disabled
-- ✅ contextBridge for IPC
-- ✅ Input validation (to be added)
-- ✅ Path validation (to be added)
-
-## 📦 Bundle Size (Estimated)
-
-- **Development**: ~50MB (includes DevTools)
-- **Production**: ~150-200MB (Electron + Chromium + Node)
-- **Installer**: ~80MB (compressed)
-
-## 🎨 Design Principles
-
-1. **Clean & Modern**: Minimalist design with Ant Design
-2. **Performance**: Virtual scrolling for large lists
-3. **Responsive**: Works on different screen sizes
-4. **Accessible**: Keyboard navigation, screen reader support
-5. **Intuitive**: Familiar patterns, clear actions
-
-## 🚦 Current Status
-
-**Phase 1: Foundation** ✅ COMPLETE (80% done)
-- [x] Project setup
-- [x] Architecture design
-- [x] Main process
-- [x] Preload script
-- [x] Dashboard UI
-- [x] Type definitions
-- [x] IPC contracts
-
-**Phase 2: Core Features** 🚧 IN PROGRESS (20% done)
-- [ ] Feature creation dialog
-- [ ] CLI integration
-- [ ] Feature details page
-- [ ] Real data loading
-
-**Phase 3: Polish** ⏳ PENDING
-- [ ] System tray
-- [ ] Settings
-- [ ] Templates UI
-- [ ] Error handling
-- [ ] Loading states
-
-**Phase 4: Distribution** ⏳ PENDING
-- [ ] Build configuration
-- [ ] App icons
-- [ ] Installers
-- [ ] Auto-update
-
-## 💡 Cool Features to Add Later
-
-- [ ] Multi-workspace support
-- [ ] Drag & drop for project ordering
-- [ ] Keyboard shortcuts (Cmd+K command palette)
-- [ ] Git conflict resolution UI
-- [ ] Timeline view of feature progress
-- [ ] Export reports (PDF, CSV)
-- [ ] Team collaboration features
-- [ ] Cloud sync
-- [ ] Mobile companion app
-- [ ] Browser extension integration
-
-## 🐛 Known Issues
-
-1. ~~Type error in main.tsx (window.ipcRenderer)~~ ✅ FIXED
-2. Need to add app icon
-3. Need to handle error states
-4. Need loading indicators
-5. Need to integrate with real Nexwork CLI
-
-## 📚 Resources
-
-- [Electron Docs](https://www.electronjs.org/docs/latest)
-- [React Docs](https://react.dev/)
-- [Ant Design](https://ant.design/)
-- [Vite Docs](https://vitejs.dev/)
-
----
-
-## 🎉 Achievements
-
-✅ **Desktop app foundation complete!**  
-✅ **Beautiful UI implemented!**  
-✅ **Type-safe architecture!**  
-✅ **Ready for CLI integration!**
-
-**Next**: Integrate with Nexwork CLI core and add feature creation dialog!
-
----
-
-**Built with ❤️ for the Nexwork ecosystem**
+1. validate full production sync between Nexwork and deployed MemStack
+2. harden remote GitHub / GitLab write behavior for Feature Memory storage
+3. continue UI polish where needed, but keep the main focus on reliability and release flow

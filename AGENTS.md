@@ -44,6 +44,7 @@ electron/
   main/
     index.ts            # App lifecycle, window creation, auto-cleanup service
     ipc-handlers.ts     # All IPC handlers (~2000 lines) - the core backend
+    plugins/            # Extension host, registry, built-in Feature Memory plugin
     storage.ts          # StorageService: JSON settings + SQLite singleton
     security.ts         # Input validation, sanitization, rate limiting
     notifications.ts    # Native OS notifications
@@ -64,6 +65,7 @@ src/                    # React renderer process
     Settings.tsx        # Settings form with JSON settings persistence
     GitAuth.tsx         # GitHub/GitLab authentication UI
     ActivityLog.tsx     # Activity history
+    FeatureDetails.tsx  # Feature execution view (workspace, worktrees, changes, commits, terminal)
   services/
     ai-service.ts       # Claude/OpenAI/Ollama integration
   contexts/
@@ -71,6 +73,38 @@ src/                    # React renderer process
   types/
     index.ts            # Shared TypeScript interfaces
 ```
+
+## Extension System
+
+Nexwork now includes an internal extension system. The most important built-in extension is **Feature Memory**.
+
+Key behavior:
+- extensions are registered in `electron/main/plugins/registry.ts`
+- main-process extension lifecycle lives in `electron/main/plugins/host.ts`
+- renderer gets extension status and actions through preload IPC
+- Settings exposes an extension-library style setup UI via `src/components/settings/PluginSettings.tsx`
+
+## Feature Memory Flow
+
+Nexwork integrates with an external MemStack service.
+
+Important rules for future agents:
+- Nexwork is the workflow client, not the knowledge store
+- MemStack lives outside this repo and owns structured markdown storage
+- Feature Memory should only appear when the extension is enabled and `ready`
+- repository selection for MemStack storage reuses the active Nexwork Git account
+- feature creation can inject a Feature Memory step after project selection
+- dashboard includes `Ask Feature Memory`
+- lifecycle events currently sync on:
+  - `feature.created`
+  - `feature.completed`
+  - `project.status.updated`
+
+Important files:
+- `electron/main/plugins/builtins/memstack.ts`
+- `src/components/CreateFeatureModal.tsx`
+- `src/components/settings/PluginSettings.tsx`
+- `src/App.tsx`
 
 ## IPC Communication
 
@@ -86,6 +120,7 @@ All renderer-to-main communication uses `window.nexworkAPI` (exposed via preload
 - `activity:*` - Activity logging
 - `terminal:*` - PTY create/write/resize/kill
 - `gitAuth:*` - GitHub/GitLab authentication (checkAuth, githubLogin, gitlabLogin, logout)
+- `plugins:*` - Extension list, enable/disable, config update, extension actions
 
 **Security model**: Context isolation enabled, nodeIntegration disabled, sandbox true. All IPC inputs validated in `security.ts`.
 
@@ -139,6 +174,8 @@ All renderer-to-main communication uses `window.nexworkAPI` (exposed via preload
 - **Workspace path** saved as `lastWorkspace` and `perAccountWorkspaces[accountId]`, restored on startup via `config:load`
 - **Features** stored in `.multi-repo-config.json` in workspace root
 - **Activity/stats** in SQLite at `~/.config/Nexwork/nexwork-data.db`
+- **Extension config** saved inside Nexwork settings storage and surfaced through the plugin host
+- **Feature Memory refs** stored on features as lightweight `pluginRefs` / `pluginData`, not as full MemStack documents
 
 ### Native Module Handling
 - `better-sqlite3` and `node-pty` are native modules requiring rebuild for Electron
@@ -162,6 +199,7 @@ These require special build handling — mark as external in vite.config.ts:
 5. **DMG + ZIP releases**: Build creates both; remember to upload both to GitHub releases
 6. **macOS code signing**: Currently skipped (`identity: null`) — not signed/notarized
 7. **Large components**: FeatureDetails.tsx is very large; read in sections with offset/limit
+8. **Website downloads**: The website reads the latest GitHub release, not the latest branch commit
 
 ## Release Process
 
