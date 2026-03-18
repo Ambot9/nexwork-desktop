@@ -580,7 +580,7 @@ export function registerIpcHandlers() {
 
       // Validate feature name is unique
       const existingFeatures = configManager.getAllFeatures()
-      if (existingFeatures.some((f: any) => f.name === data.name)) {
+      if (existingFeatures.some((f: any) => String(f.name || '').toLowerCase() === String(data.name).toLowerCase())) {
         throw new Error(`Feature "${data.name}" already exists`)
       }
 

@@ -187,7 +187,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         setFeatureFolderPath(detectedPath)
         const status: Record<string, WorktreeStatus> = {}
         for (const project of featureData.projects) {
-          const projectPath = `${detectedPath}/${project.name}`
+          const projectPath = project.worktreePath || worktreeInfo[project.name] || `${detectedPath}/${project.name}`
           const checkResult = await window.nexworkAPI.runCommand(
             `test -d "${projectPath}" && echo "exists" || echo "missing"`,
             config.workspaceRoot,
@@ -630,7 +630,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     }
   }
 
-  const fetchGitStatus = async (projectName: string) => {
+  const fetchGitStatus = async (projectName: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
     try {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], fetching: true } }))
       const config = await window.nexworkAPI.config.load()
@@ -661,7 +662,9 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       }
       const branchResult = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', workingDir)
       const branch = branchResult.success ? branchResult.output.trim() : 'unknown'
-      message.loading({ content: `Fetching ${projectName}...`, key: projectName, duration: 0 })
+      if (!silent) {
+        message.loading({ content: `Fetching ${projectName}...`, key: projectName, duration: 0 })
+      }
       const fetchResult = await window.nexworkAPI.runCommand('git fetch', workingDir)
       if (!fetchResult.success) {
         const errorText = (fetchResult.error || '').toLowerCase()
@@ -669,27 +672,31 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           errorText.includes('permission') ||
           errorText.includes('not found') ||
           errorText.includes('could not read from remote repository')
-        if (isPermission) {
-          message.error({
-            content: `${projectName}: Remote unavailable (not found or no permission)`,
-            key: projectName,
-            duration: 3,
-          })
-        } else {
-          message.error({ content: errMsg(Err.Offline, projectName), key: projectName, duration: 3 })
+        if (!silent) {
+          if (isPermission) {
+            message.error({
+              content: `${projectName}: Remote unavailable (not found or no permission)`,
+              key: projectName,
+              duration: 3,
+            })
+          } else {
+            message.error({ content: errMsg(Err.Offline, projectName), key: projectName, duration: 3 })
+          }
         }
         setGitStatuses((prev) => ({ ...prev, [projectName]: { ahead: -1, behind: -1, branch } }))
         return
       }
-      message.destroy(projectName)
+      if (!silent) {
+        message.destroy(projectName)
+      }
       const trackingCheck = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref @{u}', workingDir)
       if (trackingCheck.success) {
         const statusResult = await window.nexworkAPI.runCommand(
           `git rev-list --left-right --count HEAD...origin/${branch}`,
           workingDir,
         )
-        let ahead = 0,
-          behind = 0
+        let ahead = 0
+        let behind = 0
         if (statusResult.success) {
           const parts = statusResult.output.trim().split(/\s+/)
           ahead = parseInt(parts[0]) || 0
@@ -703,29 +710,36 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         }))
       }
     } catch {
-      message.error(errMsg(Err.StatusFailed, projectName))
+      if (!silent) {
+        message.error(errMsg(Err.StatusFailed, projectName))
+      }
     } finally {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], fetching: false } }))
     }
   }
 
-  const handleGitPull = async (projectName: string) => {
+  const handleGitPull = async (projectName: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
     try {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], pulling: true } }))
       let workingDir: string
       if (worktreeInfo[projectName]) {
         workingDir = worktreeInfo[projectName]!
-        message.loading({
-          content: `${projectName}: Pulling in worktree...`,
-          key: `pull-${projectName}`,
-          duration: 0,
-        })
+        if (!silent) {
+          message.loading({
+            content: `${projectName}: Pulling in worktree...`,
+            key: `pull-${projectName}`,
+            duration: 0,
+          })
+        }
       } else {
         const config = await window.nexworkAPI.config.load()
         const project = config.projects.find((p: any) => p.name === projectName)
         if (!project) return
         workingDir = `${config.workspaceRoot}/${project.path}`
-        message.loading({ content: `${projectName}: Pulling...`, key: `pull-${projectName}`, duration: 0 })
+        if (!silent) {
+          message.loading({ content: `${projectName}: Pulling...`, key: `pull-${projectName}`, duration: 0 })
+        }
       }
       const remoteCheck = await window.nexworkAPI.runCommand('git ls-remote --exit-code origin', workingDir)
       if (!remoteCheck.success) {
@@ -734,27 +748,33 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           errorText.includes('permission') ||
           errorText.includes('not found') ||
           errorText.includes('could not read from remote repository')
-        message.error({
-          content: isPermission
-            ? `${projectName}: Remote unavailable (not found or no permission)`
-            : `${projectName}: Failed to reach remote`,
-          key: `pull-${projectName}`,
-          duration: 3,
-        })
-        return
+        if (!silent) {
+          message.error({
+            content: isPermission
+              ? `${projectName}: Remote unavailable (not found or no permission)`
+              : `${projectName}: Failed to reach remote`,
+            key: `pull-${projectName}`,
+            duration: 3,
+          })
+        }
+        return false
       }
 
       const result = await window.nexworkAPI.runCommand('git pull --no-edit', workingDir)
       if (result.success) {
-        message.success({ content: `${projectName}: Pulled successfully`, key: `pull-${projectName}`, duration: 3 })
-        await fetchGitStatus(projectName)
+        if (!silent) {
+          message.success({ content: `${projectName}: Pulled successfully`, key: `pull-${projectName}`, duration: 3 })
+        }
+        await fetchGitStatus(projectName, { silent })
       } else {
         const errorMsg = result.error || ''
         const fullError = `${errorMsg} ${result.output || ''}`
         const errType = classifyGitError(fullError, 'pull')
 
         if (errType === Err.PullConflict) {
-          message.warning({ content: errMsg(Err.PullConflict, projectName), key: `pull-${projectName}`, duration: 3 })
+          if (!silent) {
+            message.warning({ content: errMsg(Err.PullConflict, projectName), key: `pull-${projectName}`, duration: 3 })
+          }
           const conflictResult = await window.nexworkAPI.git.getConflictFiles(workingDir)
           setConflictInfo({
             projectName,
@@ -762,43 +782,66 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             workingDir,
           })
         } else if (errType === Err.PullNoRemote) {
-          message.warning({ content: errMsg(Err.PullNoRemote, projectName), key: `pull-${projectName}`, duration: 5 })
+          if (!silent) {
+            message.warning({ content: errMsg(Err.PullNoRemote, projectName), key: `pull-${projectName}`, duration: 5 })
+          }
         } else if (errType === Err.PullAuthFailed) {
-          message.error({ content: errMsg(Err.PullAuthFailed, projectName), key: `pull-${projectName}`, duration: 10 })
+          if (!silent) {
+            message.error({
+              content: errMsg(Err.PullAuthFailed, projectName),
+              key: `pull-${projectName}`,
+              duration: 10,
+            })
+          }
         } else if (errType === Err.PullDirty) {
-          message.error({ content: errMsg(Err.PullDirty, projectName), key: `pull-${projectName}`, duration: 5 })
+          if (!silent) {
+            message.error({ content: errMsg(Err.PullDirty, projectName), key: `pull-${projectName}`, duration: 5 })
+          }
         } else {
-          message.error({
-            content: errMsg(Err.PullFailed, projectName, errorMsg),
-            key: `pull-${projectName}`,
-            duration: 5,
-          })
+          if (!silent) {
+            message.error({
+              content: errMsg(Err.PullFailed, projectName, errorMsg),
+              key: `pull-${projectName}`,
+              duration: 5,
+            })
+          }
         }
+        return true
       }
+
+      return false
     } catch (error: any) {
-      message.error(errMsg(Err.PullFailed, projectName, error.message))
+      if (!silent) {
+        message.error(errMsg(Err.PullFailed, projectName, error.message))
+      }
+      return false
     } finally {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], pulling: false } }))
     }
   }
 
-  const handleGitPush = async (projectName: string) => {
+  const handleGitPush = async (projectName: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
     try {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], pushing: true } }))
       let workingDir: string
       if (worktreeInfo[projectName]) {
         workingDir = worktreeInfo[projectName]!
-        message.loading({
-          content: `${projectName}: Pushing from worktree...`,
-          key: `push-${projectName}`,
-          duration: 0,
-        })
+        if (!silent) {
+          message.loading({
+            content: `${projectName}: Pushing from worktree...`,
+            key: `push-${projectName}`,
+            duration: 0,
+          })
+        }
       } else {
         const config = await window.nexworkAPI.config.load()
         const project = config.projects.find((p: any) => p.name === projectName)
         if (!project) return
         workingDir = `${config.workspaceRoot}/${project.path}`
-        message.loading({ content: `${projectName}: Pushing...`, key: `push-${projectName}`, duration: 0 })
+        if (!silent) {
+          message.loading({ content: `${projectName}: Pushing...`, key: `push-${projectName}`, duration: 0 })
+        }
       }
       let result = await window.nexworkAPI.runCommand('git push', workingDir)
       if (
@@ -810,11 +853,13 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         const branchResult = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', workingDir)
         const currentBranch = branchResult.success ? branchResult.output.trim() : ''
         if (currentBranch) {
-          message.info({
-            content: `${projectName}: Creating remote branch and pushing...`,
-            key: `push-${projectName}`,
-            duration: 0,
-          })
+          if (!silent) {
+            message.info({
+              content: `${projectName}: Creating remote branch and pushing...`,
+              key: `push-${projectName}`,
+              duration: 0,
+            })
+          }
           result = await window.nexworkAPI.runCommand(
             `git push origin HEAD:refs/heads/${currentBranch} && git branch --set-upstream-to=origin/${currentBranch}`,
             workingDir,
@@ -822,30 +867,40 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         }
       }
       if (result.success) {
-        message.success({
-          content: `${projectName}: Pushed to remote!`,
-          key: `push-${projectName}`,
-          duration: 3,
-        })
-        await fetchGitStatus(projectName)
-        if (!worktreeInfo[projectName]) await createProjectWorktree(projectName)
+        if (!silent) {
+          message.success({
+            content: `${projectName}: Pushed to remote!`,
+            key: `push-${projectName}`,
+            duration: 3,
+          })
+        }
+        await fetchGitStatus(projectName, { silent })
+        if (!worktreeInfo[projectName]) await createProjectWorktree(projectName, { silent })
+        return true
       } else {
         const errorMsg = result.error || ''
         const pushErr = classifyGitError(errorMsg, 'push')
-        message.error({
-          content: errMsg(pushErr, projectName, pushErr === Err.PushFailed ? errorMsg : undefined),
-          key: `push-${projectName}`,
-          duration: pushErr === Err.PushAuthFailed ? 10 : 5,
-        })
+        if (!silent) {
+          message.error({
+            content: errMsg(pushErr, projectName, pushErr === Err.PushFailed ? errorMsg : undefined),
+            key: `push-${projectName}`,
+            duration: pushErr === Err.PushAuthFailed ? 10 : 5,
+          })
+        }
       }
+      return false
     } catch (error: any) {
-      message.error(errMsg(Err.PushFailed, projectName, error.message))
+      if (!silent) {
+        message.error(errMsg(Err.PushFailed, projectName, error.message))
+      }
+      return false
     } finally {
       setGitOperations((prev) => ({ ...prev, [projectName]: { ...prev[projectName], pushing: false } }))
     }
   }
 
-  const createProjectWorktree = async (projectName: string) => {
+  const createProjectWorktree = async (projectName: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
     try {
       if (!feature) return
       const config = await window.nexworkAPI.config.load()
@@ -858,15 +913,21 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         `ls -d ${featureFolderPattern} 2>/dev/null || echo ""`,
         config.workspaceRoot,
       )
-      if (!folderResult.success || !folderResult.output.trim()) return
+      if (!folderResult.success || !folderResult.output.trim()) return false
       const folderPath = folderResult.output.trim().split('\n')[0]
       const worktreePath = `${folderPath}/${projectName}`
       const checkResult = await window.nexworkAPI.runCommand(
         `test -d "${worktreePath}" && echo "exists" || echo "missing"`,
         config.workspaceRoot,
       )
-      if (checkResult.output.trim() === 'exists') return
-      message.loading({ content: `${projectName}: Creating worktree...`, key: `worktree-${projectName}`, duration: 0 })
+      if (checkResult.output.trim() === 'exists') return true
+      if (!silent) {
+        message.loading({
+          content: `${projectName}: Creating worktree...`,
+          key: `worktree-${projectName}`,
+          duration: 0,
+        })
+      }
       const mainRepoPath = `${config.workspaceRoot}/${projectConfig.path}`
       const targetBranch = featureProject.branch
       const currentBranchResult = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', mainRepoPath)
@@ -878,21 +939,30 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         mainRepoPath,
       )
       if (createResult.success) {
-        message.success({
-          content: `${projectName}: Worktree created successfully!`,
-          key: `worktree-${projectName}`,
-          duration: 3,
-        })
+        if (!silent) {
+          message.success({
+            content: `${projectName}: Worktree created successfully!`,
+            key: `worktree-${projectName}`,
+            duration: 3,
+          })
+        }
         await checkFeatureWorkspace()
+        return true
       } else {
-        message.error({
-          content: `${projectName}: Failed to create worktree - ${createResult.error?.substring(0, 100)}`,
-          key: `worktree-${projectName}`,
-          duration: 5,
-        })
+        if (!silent) {
+          message.error({
+            content: `${projectName}: Failed to create worktree - ${createResult.error?.substring(0, 100)}`,
+            key: `worktree-${projectName}`,
+            duration: 5,
+          })
+        }
+        return false
       }
     } catch (error: any) {
-      message.error(errMsg(Err.WorktreeCreateFailed, projectName, error.message))
+      if (!silent) {
+        message.error(errMsg(Err.WorktreeCreateFailed, projectName, error.message))
+      }
+      return false
     }
   }
 
@@ -1105,6 +1175,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     try {
       const projectsWithWorktrees: string[] = []
       const projectsWithoutWorktrees: string[] = []
+      const failedProjects: string[] = []
       feature.projects.forEach((p) => {
         if (p.worktreePath || worktreeInfo[p.name]) projectsWithWorktrees.push(p.name)
         else projectsWithoutWorktrees.push(p.name)
@@ -1120,11 +1191,17 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         })
         for (const pn of projectsWithoutWorktrees) {
           try {
-            await handleCreateWorktree(pn)
-            createdCount++
-            projectsWithWorktrees.push(pn)
+            const created = await createProjectWorktree(pn, { silent: true })
+            if (created) {
+              createdCount++
+              projectsWithWorktrees.push(pn)
+            } else {
+              failedCount++
+              failedProjects.push(pn)
+            }
           } catch {
             failedCount++
+            failedProjects.push(pn)
           }
         }
       }
@@ -1147,11 +1224,17 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             }
             const trackingCheck = await window.nexworkAPI.runCommand('git rev-parse --abbrev-ref @{u}', workingDir)
             if (trackingCheck.success) {
-              await handleGitPull(pn)
-              pulledCount++
+              const pulled = await handleGitPull(pn, { silent: true })
+              if (pulled) {
+                pulledCount++
+              } else {
+                failedCount++
+                failedProjects.push(pn)
+              }
             }
           } catch {
             failedCount++
+            failedProjects.push(pn)
           }
         })
         await Promise.all(pullPromises)
@@ -1164,13 +1247,17 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const summary = parts.join(', ')
       const localOnlyCount = projectsWithWorktrees.length - pulledCount - failedCount
       if (failedCount > 0) {
-        message.warning(`Completed: ${summary}`, 5)
+        message.error(`Failed to pull: ${failedProjects.join(', ')}`, 5)
       } else if (createdCount > 0 && pulledCount === 0) {
         message.success(`${createdCount} worktree(s) created! Branches are local only - push when ready.`, 5)
       } else if (localOnlyCount > 0) {
-        message.success(`${summary}. ${localOnlyCount} branch(es) are local only - push when ready.`, 5)
+        if (summary) {
+          message.success(`${summary}. ${localOnlyCount} branch(es) are local only - push when ready.`, 5)
+        } else {
+          message.success(`${localOnlyCount} branch(es) are local only - push when ready.`, 5)
+        }
       } else {
-        message.success(`All done! ${summary}`, 3)
+        message.success('Successfully pulled all projects.', 3)
       }
     } catch (error: any) {
       message.error(errMsg(Err.PullAllFailed, undefined, error.message))
@@ -1179,9 +1266,29 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
 
   const handlePushAll = async () => {
     if (!feature) return
-    message.info('Pushing all projects...')
-    await Promise.all(feature.projects.map((p) => handleGitPush(p.name)))
-    message.success('All projects pushed!')
+    try {
+      message.loading({ content: `Pushing ${feature.projects.length} project(s)...`, key: 'push-all', duration: 0 })
+      const failedProjects: string[] = []
+
+      await Promise.all(
+        feature.projects.map(async (p) => {
+          const pushed = await handleGitPush(p.name, { silent: true })
+          if (!pushed) {
+            failedProjects.push(p.name)
+          }
+        }),
+      )
+
+      message.destroy('push-all')
+      if (failedProjects.length > 0) {
+        message.error(`Failed to push: ${failedProjects.join(', ')}`, 5)
+      } else {
+        message.success('Successfully pushed all projects.', 3)
+      }
+    } catch (error: any) {
+      message.destroy('push-all')
+      message.error(errMsg(Err.PushFailed, undefined, error.message))
+    }
   }
 
   // ── IDE / Terminal ─────────────────────────────────────────────────

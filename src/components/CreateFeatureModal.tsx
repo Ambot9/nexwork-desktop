@@ -33,8 +33,20 @@ import type { CreateFeatureDTO } from '../types'
 import type { PluginDescriptor } from '../plugins/types'
 
 const { Text, Paragraph } = Typography
-const { Step } = Steps
 const { TextArea } = Input
+
+function buildFieldLabel(label: string, tooltip: string) {
+  return (
+    <Space size={6}>
+      <span>{label}</span>
+      <Tooltip title={tooltip}>
+        <Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>
+          (?)
+        </Text>
+      </Tooltip>
+    </Space>
+  )
+}
 
 interface CreateFeatureModalProps {
   open: boolean
@@ -65,6 +77,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const [currentStep, setCurrentStep] = useState(0)
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  const [existingFeatureNames, setExistingFeatureNames] = useState<string[]>([])
   const [availableProjects, setAvailableProjects] = useState<string[]>([])
   const [availableTemplates, setAvailableTemplates] = useState<string[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState('default')
@@ -78,9 +91,11 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const [projectStatusLoading, setProjectStatusLoading] = useState<Record<string, boolean>>({})
   const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [preparingRequirement, setPreparingRequirement] = useState(false)
+  const [showMemstackContext, setShowMemstackContext] = useState(false)
 
   useEffect(() => {
     if (open) {
+      setShowMemstackContext(false)
       loadData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,6 +105,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     try {
       // Load configuration
       const config = await window.nexworkAPI.config.load()
+      setExistingFeatureNames((config.features || []).map((feature: any) => String(feature.name || '')))
 
       // Filter to managed projects if configured; otherwise use all
       const managedProjects: string[] | undefined = config.userConfig?.managedProjects
@@ -121,6 +137,17 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       message.error('Failed to load configuration')
     }
   }
+
+  const normalizeFeatureName = (value: string) =>
+    value
+      .replace(/[;&|`$(){}[\]<>]/g, '')
+      .replace(/\.\./g, '')
+      .replace(/[/\\]/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .trim()
+      .toLowerCase()
 
   const loadProjectBranches = async (config: any) => {
     const branches: Record<string, string> = {}
@@ -620,7 +647,29 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
           <Form.Item
             label="Feature Name"
             name="featureName"
-            rules={[{ required: true, message: 'Please enter feature name' }]}
+            rules={[
+              { required: true, message: 'Please enter feature name' },
+              {
+                validator: async (_, value) => {
+                  if (!value || !String(value).trim()) {
+                    return
+                  }
+
+                  const normalizedName = normalizeFeatureName(String(value))
+                  if (!normalizedName) {
+                    throw new Error('Feature name is invalid after sanitization')
+                  }
+
+                  const duplicateExists = existingFeatureNames.some(
+                    (featureName) => normalizeFeatureName(featureName) === normalizedName,
+                  )
+
+                  if (duplicateExists) {
+                    throw new Error('A feature with this name already exists')
+                  }
+                },
+              },
+            ]}
           >
             <Input size="large" placeholder="e.g., Add Payment Gateway Integration" autoFocus />
           </Form.Item>
@@ -846,27 +895,43 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                     type="info"
                     showIcon
                     message={readyMemstackPlugin.name}
-                    description="Selected projects will be used as the relationship context for this feature memory record."
+                    description="The feature name and selected projects below will be reused as context for this Feature Memory record."
                   />
 
                   <Form.Item noStyle shouldUpdate>
                     {({ getFieldValue }) => {
+                      const featureName = String(getFieldValue('featureName') || '').trim()
                       const selectedProjects = (getFieldValue('projects') || []) as string[]
 
-                      return selectedProjects.length > 0 ? (
+                      if (!featureName && selectedProjects.length === 0) {
+                        return null
+                      }
+
+                      return (
                         <Card size="small">
                           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                            <Text strong>Related Projects</Text>
-                            <Space size={[8, 8]} wrap>
-                              {selectedProjects.map((project) => (
-                                <Tag key={project} color="blue">
-                                  {project}
-                                </Tag>
-                              ))}
-                            </Space>
+                            {featureName ? (
+                              <>
+                                <Text strong>Feature Name</Text>
+                                <Text>{featureName}</Text>
+                              </>
+                            ) : null}
+
+                            {selectedProjects.length > 0 ? (
+                              <>
+                                <Text strong>Related Projects</Text>
+                                <Space size={[8, 8]} wrap>
+                                  {selectedProjects.map((project) => (
+                                    <Tag key={project} color="blue">
+                                      {project}
+                                    </Tag>
+                                  ))}
+                                </Space>
+                              </>
+                            ) : null}
                           </Space>
                         </Card>
-                      ) : null
+                      )
                     }}
                   </Form.Item>
 
@@ -884,7 +949,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                       <Text strong>Track in Feature Memory</Text>
                       <br />
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        Capture and summarize customer requirements after project selection.
+                        Paste the customer request or requirement details. Extra context is optional.
                       </Text>
                     </div>
                     <Form.Item name="memstackTrack" valuePropName="checked" initialValue={false} style={{ margin: 0 }}>
@@ -897,27 +962,82 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                       getFieldValue('memstackTrack') ? (
                         <Space direction="vertical" style={{ width: '100%' }} size="middle">
                           <Form.Item
-                            label="Requirement Items"
+                            label={buildFieldLabel(
+                              'Requirement Items',
+                              'Paste the raw customer request, requirement list, or planning notes that should be stored in Feature Memory.',
+                            )}
                             name="memstackRequirement"
                             rules={[{ required: true, message: 'Please paste the customer requirement items' }]}
                           >
                             <TextArea
                               rows={10}
-                              placeholder="Paste the customer requirement, plan, or feature request here..."
+                              placeholder="Paste the customer request, Jira content, notes, or requirement items here..."
                             />
                           </Form.Item>
 
-                          <Form.Item label="Product Name" name="memstackProductName">
-                            <Input placeholder="e.g., Coloris" />
-                          </Form.Item>
+                          <div
+                            style={{
+                              border: '1px dashed rgba(127,127,127,0.25)',
+                              borderRadius: 8,
+                              padding: '12px 16px',
+                            }}
+                          >
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  gap: 12,
+                                }}
+                              >
+                                <div>
+                                  <Text strong>More Context (optional)</Text>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    Add extra business context only if it helps future search and retrieval.
+                                  </Text>
+                                </div>
+                                <Button type="link" onClick={() => setShowMemstackContext((prev) => !prev)}>
+                                  {showMemstackContext ? 'Hide' : 'Show'}
+                                </Button>
+                              </div>
 
-                          <Form.Item label="Customer / Request Source" name="memstackCustomerName">
-                            <Input placeholder="e.g., Internal, Client ABC, Sales request" />
-                          </Form.Item>
+                              {showMemstackContext ? (
+                                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                  <Form.Item
+                                    label={buildFieldLabel(
+                                      'Product / Module',
+                                      'The part of your system this feature belongs to, such as Checkout, Payments, Billing, or Merchant Portal.',
+                                    )}
+                                    name="memstackProductName"
+                                  >
+                                    <Input placeholder="e.g., Checkout, Payments, Merchant Portal" />
+                                  </Form.Item>
 
-                          <Form.Item label="Tags (optional)" name="memstackTags">
-                            <Input placeholder="promotion, checkout, business-rule" />
-                          </Form.Item>
+                                  <Form.Item
+                                    label={buildFieldLabel(
+                                      'Customer / Request Source',
+                                      'Who requested this feature or where it came from, such as Internal, Client ABC, Sales request, or Support escalation.',
+                                    )}
+                                    name="memstackCustomerName"
+                                  >
+                                    <Input placeholder="e.g., Internal, Client ABC, Sales request" />
+                                  </Form.Item>
+
+                                  <Form.Item
+                                    label={buildFieldLabel(
+                                      'Tags (optional)',
+                                      'Short searchable keywords like provider names, topics, or business rules. Example: stripe, promotion, webhook, checkout.',
+                                    )}
+                                    name="memstackTags"
+                                  >
+                                    <Input placeholder="promotion, checkout, business-rule" />
+                                  </Form.Item>
+                                </Space>
+                              ) : null}
+                            </Space>
+                          </div>
 
                           <div
                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
@@ -925,13 +1045,18 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               Nexwork will prepare a concise requirement summary using the selected project context.
                             </Text>
-                            <Button loading={preparingRequirement} onClick={handlePrepareRequirement}>
-                              Summarize Requirement
-                            </Button>
+                            <Tooltip title="Generate a cleaner summary from the requirement text and selected project context before saving it to Feature Memory.">
+                              <Button loading={preparingRequirement} onClick={handlePrepareRequirement}>
+                                Summarize Requirement
+                              </Button>
+                            </Tooltip>
                           </div>
 
                           <Form.Item
-                            label="Requirement Summary"
+                            label={buildFieldLabel(
+                              'Requirement Summary',
+                              'Review and edit the prepared summary that will be stored in Feature Memory for future search and retrieval.',
+                            )}
                             name="memstackRequirementSummary"
                             rules={[{ required: true, message: 'Requirement summary is required before continuing' }]}
                           >
@@ -968,27 +1093,35 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                 description: 'Custom template',
                 icon: '📄',
               }
+              const isSelected = selectedTemplate === template
 
               return (
                 <Card
                   key={template}
                   hoverable
                   style={{
-                    borderColor: selectedTemplate === template ? '#1890ff' : undefined,
-                    borderWidth: selectedTemplate === template ? 2 : 1,
+                    cursor: 'pointer',
+                    borderColor: isSelected ? '#1677ff' : 'rgba(5, 5, 5, 0.09)',
+                    borderWidth: isSelected ? 2 : 1,
+                    background: isSelected ? 'rgba(22, 119, 255, 0.05)' : '#fff',
+                    boxShadow: isSelected ? '0 0 0 2px rgba(22, 119, 255, 0.08)' : undefined,
+                    transition: 'all 0.2s ease',
                   }}
                   onClick={() => setSelectedTemplate(template)}
                 >
-                  <Space>
-                    <span style={{ fontSize: 24 }}>{preview.icon}</span>
-                    <div>
-                      <Text strong>{preview.name}</Text>
-                      <br />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {preview.description}
-                      </Text>
-                    </div>
-                  </Space>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                    <Space>
+                      <span style={{ fontSize: 24 }}>{preview.icon}</span>
+                      <div>
+                        <Text strong>{preview.name}</Text>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {preview.description}
+                        </Text>
+                      </div>
+                    </Space>
+                    <Tag color={isSelected ? 'blue' : 'default'}>{isSelected ? 'Selected' : 'Click to use'}</Tag>
+                  </div>
                 </Card>
               )
             })}
@@ -997,6 +1130,11 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       ),
     },
   ]
+
+  const stepItems = steps.map((step) => ({
+    title: <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: '-0.01em' }}>{step.title}</span>,
+    icon: <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{step.icon}</span>,
+  }))
 
   return (
     <Modal
@@ -1011,11 +1149,13 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       width={700}
       footer={null}
     >
-      <Steps current={currentStep} style={{ marginBottom: 24 }}>
-        {steps.map((step, index) => (
-          <Step key={index} title={step.title} icon={step.icon} />
-        ))}
-      </Steps>
+      <Steps
+        current={currentStep}
+        size="small"
+        responsive={false}
+        style={{ marginBottom: 20, paddingInline: 4 }}
+        items={stepItems}
+      />
 
       <Form
         form={form}

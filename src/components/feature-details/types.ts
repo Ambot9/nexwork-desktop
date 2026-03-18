@@ -84,10 +84,10 @@ export interface FeatureDetailsContext {
   handleRunCommand: () => void
   handleExecuteCommand: () => Promise<void>
   handleGitSync: () => void
-  fetchGitStatus: (projectName: string) => Promise<void>
+  fetchGitStatus: (projectName: string, options?: { silent?: boolean }) => Promise<void>
   fetchAllGitStatuses: () => Promise<void>
-  handleGitPull: (projectName: string) => Promise<void>
-  handleGitPush: (projectName: string) => Promise<void>
+  handleGitPull: (projectName: string, options?: { silent?: boolean }) => Promise<boolean | undefined>
+  handleGitPush: (projectName: string, options?: { silent?: boolean }) => Promise<boolean | undefined>
   handleCleanupWorktrees: () => void
   handleCommitFeature: () => void
   handleMergeFeature: () => void

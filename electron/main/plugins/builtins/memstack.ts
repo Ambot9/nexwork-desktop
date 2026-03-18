@@ -63,6 +63,13 @@ function buildGitAccountPayload() {
 async function postMemstackSync(config: Record<string, any> | undefined, payload: any) {
   const baseUrl = requireBaseUrl(config)
   const apiKey = typeof config?.apiKey === 'string' ? config.apiKey.trim() : ''
+  const gitAccount = (() => {
+    try {
+      return buildGitAccountPayload()
+    } catch {
+      return null
+    }
+  })()
 
   const response = await fetch(`${baseUrl}/api/feature-memories/sync-from-nexwork`, {
     method: 'POST',
@@ -73,7 +80,7 @@ async function postMemstackSync(config: Record<string, any> | undefined, payload
     body: JSON.stringify({
       ...payload,
       storageTarget: buildStorageTarget(config),
-      gitAccount: buildGitAccountPayload(),
+      gitAccount,
     }),
   })
 

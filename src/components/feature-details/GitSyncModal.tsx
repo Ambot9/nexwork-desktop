@@ -166,8 +166,8 @@ export function GitSyncModal({ ctx }: Props) {
                       ) : status?.branch === project.branch ? (
                         <Tag color="blue">{project.branch}</Tag>
                       ) : (
-                        <Tooltip title='Branch will be created when you click "Create Worktree"'>
-                          <Tag color="orange">{project.branch} (Not created)</Tag>
+                        <Tooltip title="Remote branch has not been created yet. Create the worktree or push the branch to publish it remotely.">
+                          <Tag color="orange">{project.branch} (Remote not created)</Tag>
                         </Tooltip>
                       )}
                     </div>
