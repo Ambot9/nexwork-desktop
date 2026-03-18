@@ -787,7 +787,7 @@ function App() {
                 </div>
               )}
               <Text type="secondary" style={{ fontSize: 11 }}>
-                v1.0.11
+                v1.1.0-beta.1
               </Text>
             </div>
           )}
