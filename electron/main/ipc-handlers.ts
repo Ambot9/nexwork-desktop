@@ -414,6 +414,10 @@ async function syncWorktreePaths(featureName: string): Promise<void> {
 
 export function registerIpcHandlers() {
   // System
+  ipcMain.handle('system:getAppVersion', async () => {
+    return app.getVersion()
+  })
+
   ipcMain.handle('system:selectFolder', async () => {
     try {
       const result = await dialog.showOpenDialog({

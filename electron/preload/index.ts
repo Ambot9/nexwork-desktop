@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
   openInIDE: (folderPath: string, ide: string) => ipcRenderer.invoke('system:openInIDE', folderPath, ide),
 
   system: {
+    getAppVersion: () => ipcRenderer.invoke('system:getAppVersion'),
     setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('system:setAutoLaunch', enabled),
     getAutoLaunch: () => ipcRenderer.invoke('system:getAutoLaunch'),
     restartAndInstallUpdate: () => ipcRenderer.invoke('system:restartAndInstallUpdate'),
@@ -187,6 +188,7 @@ declare global {
       openInFinder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
       openInIDE: (folderPath: string, ide: string) => Promise<{ success: boolean; error?: string }>
       system: {
+        getAppVersion: () => Promise<string>
         setAutoLaunch: (enabled: boolean) => Promise<any>
         getAutoLaunch: () => Promise<any>
         restartAndInstallUpdate: () => Promise<any>

@@ -16,7 +16,6 @@ import {
   Skeleton,
   Input,
   Segmented,
-  Tag,
   notification,
   Alert,
 } from 'antd'
@@ -93,11 +92,12 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
+  const [_plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [authUser, setAuthUser] = useState('')
   const [authAvatar, setAuthAvatar] = useState('')
   const [_authProvider, setAuthProvider] = useState('')
   const [_authChecked, setAuthChecked] = useState(false)
+  const [appVersion, setAppVersion] = useState('...')
   const [updateState, setUpdateState] = useState<{
     status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
     version?: string
@@ -110,6 +110,11 @@ function App() {
 
   useEffect(() => {
     // Check auth on startup
+    window.nexworkAPI.system
+      .getAppVersion()
+      .then((version) => setAppVersion(version))
+      .catch(() => setAppVersion('unknown'))
+
     window.nexworkAPI.gitAuth
       .checkAuth()
       .then((auth) => {
@@ -838,7 +843,7 @@ function App() {
                 </div>
               )}
               <Text type="secondary" style={{ fontSize: 11 }}>
-                v1.1.0-beta.2
+                v{appVersion}
               </Text>
             </div>
           )}
