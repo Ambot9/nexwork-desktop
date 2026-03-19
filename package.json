@@ -1,6 +1,6 @@
 {
   "name": "nexwork-desktop",
-  "version": "1.1.0-beta.1",
+  "version": "1.1.0-beta.2",
   "description": "Desktop application for Nexwork - Multi-repository feature management",
   "main": "dist-electron/main/index.js",
   "author": "Nexwork Team",
