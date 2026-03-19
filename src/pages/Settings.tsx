@@ -122,6 +122,7 @@ export function Settings() {
           searchPaths: searchPaths.split(',').map((s: string) => s.trim()),
           exclude: exclude.split(',').map((s: string) => s.trim()),
           defaultTemplate,
+          projectDependencies: config.userConfig?.projectDependencies,
           managedProjects: config.userConfig?.managedProjects,
           ai: {
             enabled: aiEnabled,
@@ -210,6 +211,7 @@ export function Settings() {
         searchPaths: searchPaths.split(',').map((s: string) => s.trim()),
         exclude: exclude.split(',').map((s: string) => s.trim()),
         defaultTemplate,
+        projectDependencies: config.userConfig?.projectDependencies,
         managedProjects,
         ai: {
           enabled: aiEnabled,
@@ -225,6 +227,37 @@ export function Settings() {
       setConfig(updatedConfig)
     } catch (error) {
       console.error('Failed to save managed projects:', error)
+    }
+  }
+
+  const handleProjectDependenciesChange = async (projectDependencies: Record<string, string[]>) => {
+    if (!config) return
+
+    const updatedConfig: Config = {
+      workspaceRoot: config.workspaceRoot,
+      projects: config.projects,
+      features: config.features,
+      userConfig: {
+        searchPaths: searchPaths.split(',').map((s: string) => s.trim()),
+        exclude: exclude.split(',').map((s: string) => s.trim()),
+        defaultTemplate,
+        projectDependencies,
+        managedProjects: config.userConfig?.managedProjects,
+        ai: {
+          enabled: aiEnabled,
+          provider: aiProvider as 'claude' | 'openai' | 'ollama',
+          apiKey: aiApiKey,
+          model: aiModel,
+        },
+      },
+    }
+
+    try {
+      await window.nexworkAPI.config.save(updatedConfig)
+      setConfig(updatedConfig)
+    } catch (error) {
+      console.error('Failed to save project dependencies:', error)
+      message.error('Failed to save project dependencies')
     }
   }
 
@@ -359,7 +392,11 @@ export function Settings() {
               exclude={exclude}
               onExcludeChange={handleExcludeChange}
             />
-            <WorkspaceProjectsSettings config={config} onManagedProjectsChange={handleManagedProjectsChange} />
+            <WorkspaceProjectsSettings
+              config={config}
+              onManagedProjectsChange={handleManagedProjectsChange}
+              onProjectDependenciesChange={handleProjectDependenciesChange}
+            />
           </Space>
         </div>
 

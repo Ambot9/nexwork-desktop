@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { log } from './log'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +37,84 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 let autoCleanupInterval: NodeJS.Timeout | null = null
+let autoUpdateInterval: NodeJS.Timeout | null = null
+
+function sendUpdateEvent(channel: string, payload?: Record<string, any>) {
+  win?.webContents.send(channel, payload || {})
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) {
+    log.info('Skipping auto-updater in development mode')
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateEvent('app-update:checking')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    log.info('Update available:', info.version)
+    sendUpdateEvent('app-update:available', {
+      version: info.version,
+      releaseDate: info.releaseDate,
+    })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    sendUpdateEvent('app-update:not-available')
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateEvent('app-update:download-progress', {
+      percent: progress.percent,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info('Update downloaded:', info.version)
+    sendUpdateEvent('app-update:downloaded', {
+      version: info.version,
+      releaseDate: info.releaseDate,
+    })
+  })
+
+  autoUpdater.on('error', (error) => {
+    log.error('Auto-updater failed:', error)
+    sendUpdateEvent('app-update:error', {
+      message: error?.message || 'Failed to check for updates',
+    })
+  })
+}
+
+function startAutoUpdateChecks() {
+  if (!app.isPackaged) {
+    return
+  }
+
+  autoUpdater.checkForUpdates().catch((error) => {
+    log.error('Initial update check failed:', error)
+  })
+
+  autoUpdateInterval = setInterval(
+    () => {
+      autoUpdater.checkForUpdates().catch((error) => {
+        log.error('Scheduled update check failed:', error)
+      })
+    },
+    6 * 60 * 60 * 1000,
+  )
+}
+
+function stopAutoUpdateChecks() {
+  if (autoUpdateInterval) {
+    clearInterval(autoUpdateInterval)
+    autoUpdateInterval = null
+  }
+}
 
 // Auto-cleanup service for expired features
 function startAutoCleanupService() {
@@ -216,6 +295,7 @@ function createWindow() {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    stopAutoUpdateChecks()
     app.quit()
     win = null
   }
@@ -230,6 +310,8 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(async () => {
+  setupAutoUpdater()
+
   // Load saved settings and restore workspace
   try {
     const { storage } = await import('./storage')
@@ -247,6 +329,7 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers()
   createWindow()
+  startAutoUpdateChecks()
 
   // Create system tray
   if (win) {
@@ -261,6 +344,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', async () => {
   ;(app as any).isQuitting = true
   stopAutoCleanupService()
+  stopAutoUpdateChecks()
   destroyTray()
 
   // Close database to prevent corruption

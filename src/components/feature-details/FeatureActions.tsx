@@ -9,6 +9,7 @@ import {
   Calendar,
   MoreHorizontal,
   GitPullRequestCreate,
+  FolderPlus,
 } from 'lucide-react'
 import type { FeatureDetailsContext } from './types'
 
@@ -26,6 +27,12 @@ export function FeatureActions({ ctx }: Props) {
       label: 'Sync Worktrees',
       icon: <FolderSync size={14} />,
       onClick: ctx.handleSyncWorktrees,
+    },
+    {
+      key: 'add-projects',
+      label: 'Add Projects',
+      icon: <FolderPlus size={14} />,
+      onClick: ctx.handleAddProjects,
     },
     {
       key: 'run-command',

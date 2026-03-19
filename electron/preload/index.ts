@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
   system: {
     setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('system:setAutoLaunch', enabled),
     getAutoLaunch: () => ipcRenderer.invoke('system:getAutoLaunch'),
+    restartAndInstallUpdate: () => ipcRenderer.invoke('system:restartAndInstallUpdate'),
   },
 
   // Features
@@ -24,6 +25,8 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
     getAll: () => ipcRenderer.invoke('features:getAll'),
     getByName: (name: string) => ipcRenderer.invoke('features:getByName', name),
     create: (data: any) => ipcRenderer.invoke('features:create', data),
+    addProjects: (name: string, projectNames: string[]) =>
+      ipcRenderer.invoke('features:addProjects', name, projectNames),
     update: (name: string, data: any) => ipcRenderer.invoke('features:update', name, data),
     delete: (name: string) => ipcRenderer.invoke('features:delete', name),
     complete: (name: string, cleanup: boolean) => ipcRenderer.invoke('features:complete', name, cleanup),
@@ -186,6 +189,7 @@ declare global {
       system: {
         setAutoLaunch: (enabled: boolean) => Promise<any>
         getAutoLaunch: () => Promise<any>
+        restartAndInstallUpdate: () => Promise<any>
       }
       features: any
       projects: any

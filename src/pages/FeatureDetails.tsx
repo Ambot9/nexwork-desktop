@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { message, Modal, Space, Typography, DatePicker, Alert } from 'antd'
+import { message, Modal, Space, Typography, DatePicker, Alert, Button, Select, Switch, Card } from 'antd'
 import dayjs from 'dayjs'
 import type { Feature, FeatureStats } from '../types'
 import { IntegratedTerminal } from '../components/IntegratedTerminal'
@@ -61,6 +61,15 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const [projectWorktreeStatus, setProjectWorktreeStatus] = useState<Record<string, WorktreeStatus>>({})
   const [creatingWorktrees, setCreatingWorktrees] = useState<Record<string, boolean>>({})
   const [localFeatureBranches, setLocalFeatureBranches] = useState<Record<string, boolean>>({})
+  const [projectDependencies, setProjectDependencies] = useState<Record<string, string[]>>({})
+  const [addingRequiredProjects, setAddingRequiredProjects] = useState(false)
+  const [availableProjects, setAvailableProjects] = useState<string[]>([])
+  const [addProjectsModalOpen, setAddProjectsModalOpen] = useState(false)
+  const [addProjectsSubmitting, setAddProjectsSubmitting] = useState(false)
+  const [addProjectSelections, setAddProjectSelections] = useState<string[]>([])
+  const [addProjectBaseBranches, setAddProjectBaseBranches] = useState<Record<string, string>>({})
+  const [addProjectPullFirst, setAddProjectPullFirst] = useState<Record<string, boolean>>({})
+  const [addProjectsAvailableBranches, setAddProjectsAvailableBranches] = useState<Record<string, string[]>>({})
   const [preferredIDE] = useState<string>(() => {
     return localStorage.getItem('preferredIDE') || 'vscode'
   })
@@ -112,6 +121,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       setFeature(featureData)
       setStats(statsData)
       setWorkspaceRoot(config.workspaceRoot)
+      setProjectDependencies(config.userConfig?.projectDependencies || {})
+      setAvailableProjects((config.projects || []).map((project: any) => project.name))
       if (featureData?.projects) {
         const newWorktreeInfo: Record<string, string | null> = {}
         featureData.projects.forEach((p: any) => {
@@ -125,6 +136,106 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     } finally {
       if (!silent) setLoading(false)
     }
+  }
+
+  const getMissingRequiredProjects = () => {
+    if (!feature) {
+      return []
+    }
+
+    const selectedProjects = feature.projects.map((project) => project.name)
+    const selectedSet = new Set(selectedProjects)
+    const missingProjects = new Set<string>()
+    const queue = [...selectedProjects]
+
+    while (queue.length > 0) {
+      const projectName = queue.shift()
+      if (!projectName) continue
+      ;(projectDependencies[projectName] || []).forEach((dependencyName) => {
+        if (!selectedSet.has(dependencyName)) {
+          missingProjects.add(dependencyName)
+          selectedSet.add(dependencyName)
+          queue.push(dependencyName)
+        }
+      })
+    }
+
+    return Array.from(missingProjects)
+  }
+
+  const resolveProjectsToAdd = (selectedProjects: string[]) => {
+    if (!feature) {
+      return []
+    }
+
+    const existingProjects = feature.projects.map((project) => project.name)
+    const resolved = new Set<string>(existingProjects)
+    const queue = [...selectedProjects]
+
+    while (queue.length > 0) {
+      const projectName = queue.shift()
+      if (!projectName || resolved.has(projectName) || !availableProjects.includes(projectName)) {
+        continue
+      }
+
+      resolved.add(projectName)
+
+      for (const dependencyName of projectDependencies[projectName] || []) {
+        if (!resolved.has(dependencyName) && availableProjects.includes(dependencyName)) {
+          queue.push(dependencyName)
+        }
+      }
+    }
+
+    return Array.from(resolved).filter((projectName) => !existingProjects.includes(projectName))
+  }
+
+  const loadBranchesForProjects = async (projectNames: string[]) => {
+    const config = await window.nexworkAPI.config.load()
+    const branchOptions: Record<string, string[]> = {}
+    const baseBranchDefaults: Record<string, string> = {}
+
+    await Promise.all(
+      projectNames.map(async (projectName) => {
+        const project = config.projects.find((entry: any) => entry.name === projectName)
+        if (!project) {
+          branchOptions[projectName] = ['staging']
+          baseBranchDefaults[projectName] = 'staging'
+          return
+        }
+
+        const projectPath = `${config.workspaceRoot}/${project.path}`
+        const [branchesResult, currentBranchResult] = await Promise.all([
+          window.nexworkAPI.runCommand(
+            'git branch -a | sed "s/remotes\\/origin\\///" | sed "s/^[* ]*//" | grep -v "HEAD" | sort -u',
+            projectPath,
+          ),
+          window.nexworkAPI.runCommand('git rev-parse --abbrev-ref HEAD', projectPath),
+        ])
+
+        const branches = branchesResult.success
+          ? branchesResult.output
+              .trim()
+              .split('\n')
+              .map((branch) => branch.trim())
+              .filter(Boolean)
+          : []
+
+        const preferredBranches = branches.filter((branch) =>
+          ['production', 'staging', 'demo', 'master', 'main', 'develop'].includes(branch.toLowerCase()),
+        )
+        const options = preferredBranches.length > 0 ? preferredBranches : branches
+        const fallbackBranch = currentBranchResult.success ? currentBranchResult.output.trim() : 'staging'
+
+        branchOptions[projectName] = Array.from(new Set(options.length > 0 ? options : [fallbackBranch]))
+        baseBranchDefaults[projectName] = branchOptions[projectName].includes(fallbackBranch)
+          ? fallbackBranch
+          : branchOptions[projectName][0]
+      }),
+    )
+
+    setAddProjectsAvailableBranches(branchOptions)
+    setAddProjectBaseBranches((prev) => ({ ...baseBranchDefaults, ...prev }))
   }
 
   const loadCurrentBranches = async () => {
@@ -537,6 +648,93 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       })
     } finally {
       setCreatingWorktrees((prev) => ({ ...prev, [projectName]: false }))
+    }
+  }
+
+  const handleAddRequiredProjects = async () => {
+    if (!feature) return
+
+    const missingProjects = getMissingRequiredProjects()
+    if (missingProjects.length === 0) {
+      return
+    }
+
+    try {
+      setAddingRequiredProjects(true)
+      const result = await window.nexworkAPI.features.addProjects(feature.name, missingProjects)
+      const addedProjects = result?.addedProjects || []
+
+      if (addedProjects.length > 0) {
+        message.success(`Added required project(s): ${addedProjects.join(', ')}`)
+      } else {
+        message.info('All required projects are already included')
+      }
+
+      await loadFeatureDetails(true)
+      await checkFeatureWorkspace()
+      await loadCurrentBranches()
+    } catch (error: any) {
+      message.error(error.message || 'Failed to add required projects')
+    } finally {
+      setAddingRequiredProjects(false)
+    }
+  }
+
+  const handleAddProjects = () => {
+    if (!feature) return
+
+    const existingProjects = new Set(feature.projects.map((project) => project.name))
+    const selectableProjects = availableProjects.filter((projectName) => !existingProjects.has(projectName))
+
+    if (selectableProjects.length === 0) {
+      message.info('All available projects are already part of this feature')
+      return
+    }
+    setAddProjectSelections([])
+    setAddProjectBaseBranches({})
+    setAddProjectPullFirst({})
+    setAddProjectsAvailableBranches({})
+    setAddProjectsModalOpen(true)
+    loadBranchesForProjects(selectableProjects).catch((error) => {
+      console.error('Failed to load branches for add-projects modal:', error)
+    })
+  }
+
+  const handleConfirmAddProjects = async () => {
+    if (!feature) return
+
+    if (addProjectSelections.length === 0) {
+      message.warning('Select at least one project')
+      return
+    }
+
+    try {
+      setAddProjectsSubmitting(true)
+
+      const projectsToAdd = resolveProjectsToAdd(addProjectSelections)
+      const requestPayload = projectsToAdd.map((projectName) => ({
+        name: projectName,
+        baseBranch: addProjectBaseBranches[projectName],
+        pullFirst: !!addProjectPullFirst[projectName],
+      }))
+
+      const result = await window.nexworkAPI.features.addProjects(feature.name, requestPayload)
+      const addedProjects = result?.addedProjects || []
+
+      if (addedProjects.length > 0) {
+        message.success(`Added projects: ${addedProjects.join(', ')}`)
+      } else {
+        message.info('No new projects were added')
+      }
+
+      setAddProjectsModalOpen(false)
+      await loadFeatureDetails(true)
+      await checkFeatureWorkspace()
+      await loadCurrentBranches()
+    } catch (error: any) {
+      message.error(error.message || 'Failed to add projects')
+    } finally {
+      setAddProjectsSubmitting(false)
     }
   }
 
@@ -1374,6 +1572,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     return <div>Loading...</div>
   }
 
+  const missingRequiredProjects = getMissingRequiredProjects()
+
   const ctx: FeatureDetailsContext = {
     feature,
     stats,
@@ -1411,6 +1611,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     handleDelete,
     handleRefresh,
     handleSyncWorktrees,
+    handleAddProjects,
     handleCleanupExpired,
     handleExtendExpiration,
     handleCreateWorktree,
@@ -1454,6 +1655,25 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   return (
     <div style={{ maxWidth: 1440, margin: '0 auto', padding: '8px 0 32px', overflowX: 'hidden' }}>
       <FeatureHeader ctx={ctx} />
+      {missingRequiredProjects.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="This feature is missing required project dependencies"
+          description={
+            <Space direction="vertical" size="small">
+              <Text>
+                Add these project(s) so setup and worktree creation do not fail later:{' '}
+                {missingRequiredProjects.join(', ')}
+              </Text>
+              <Button type="primary" loading={addingRequiredProjects} onClick={handleAddRequiredProjects}>
+                Add Required Projects
+              </Button>
+            </Space>
+          }
+        />
+      )}
       <FeatureActions ctx={ctx} />
       <RunCommandModal ctx={ctx} />
       <CommitModal ctx={ctx} />
@@ -1461,6 +1681,84 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       <PRModal ctx={ctx} />
       <ConflictViewer ctx={ctx} />
       <FeatureStatsRow ctx={ctx} />
+      <Modal
+        title="Add Projects"
+        open={addProjectsModalOpen}
+        onCancel={() => setAddProjectsModalOpen(false)}
+        onOk={handleConfirmAddProjects}
+        okText="Add Projects"
+        confirmLoading={addProjectsSubmitting}
+        width={720}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Text>Select more projects for this feature.</Text>
+          <Text type="secondary">
+            For each added project, choose the base branch to branch from. If needed, pull that branch before the
+            feature branch is created.
+          </Text>
+
+          <Select
+            mode="multiple"
+            style={{ width: '100%' }}
+            placeholder="Select projects to add"
+            value={addProjectSelections}
+            options={availableProjects
+              .filter((projectName) => !feature.projects.some((project) => project.name === projectName))
+              .map((projectName) => ({ value: projectName, label: projectName }))}
+            onChange={(value) => setAddProjectSelections(value)}
+          />
+
+          {resolveProjectsToAdd(addProjectSelections).length > addProjectSelections.length && (
+            <Alert
+              type="info"
+              showIcon
+              message="Required dependencies will also be added"
+              description={resolveProjectsToAdd(addProjectSelections)
+                .filter((projectName) => !addProjectSelections.includes(projectName))
+                .join(', ')}
+            />
+          )}
+
+          {resolveProjectsToAdd(addProjectSelections).map((projectName) => (
+            <Card key={projectName} size="small">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text strong>{projectName}</Text>
+                <Space align="center" wrap>
+                  <Text type="secondary">Base branch</Text>
+                  <Select
+                    value={addProjectBaseBranches[projectName]}
+                    style={{ minWidth: 180 }}
+                    options={(addProjectsAvailableBranches[projectName] || ['staging']).map((branch) => ({
+                      value: branch,
+                      label: branch,
+                    }))}
+                    onChange={(value) =>
+                      setAddProjectBaseBranches((prev) => ({
+                        ...prev,
+                        [projectName]: value,
+                      }))
+                    }
+                  />
+                </Space>
+                <Space align="center">
+                  <Switch
+                    checked={!!addProjectPullFirst[projectName]}
+                    onChange={(checked) =>
+                      setAddProjectPullFirst((prev) => ({
+                        ...prev,
+                        [projectName]: checked,
+                      }))
+                    }
+                  />
+                  <Text type="secondary">
+                    Pull {addProjectBaseBranches[projectName] || 'base branch'} before adding
+                  </Text>
+                </Space>
+              </Space>
+            </Card>
+          ))}
+        </Space>
+      </Modal>
 
       <div
         style={{

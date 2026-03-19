@@ -78,6 +78,7 @@ export interface FeatureDetailsContext {
   handleDelete: () => void
   handleRefresh: () => Promise<void>
   handleSyncWorktrees: () => Promise<void>
+  handleAddProjects: () => void
   handleCleanupExpired: () => void
   handleExtendExpiration: () => void
   handleCreateWorktree: (projectName: string) => Promise<void>

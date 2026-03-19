@@ -56,6 +56,12 @@ export interface PluginEventMap {
     status: string
     workspaceRoot: string
   }
+  'feature.scope.updated': {
+    feature: any
+    featureName: string
+    addedProjects: string[]
+    workspaceRoot: string
+  }
 }
 
 export interface PluginEventResult {
@@ -76,6 +82,10 @@ export interface MainPlugin extends PluginManifest {
   onFeatureDeleted?: (payload: PluginEventMap['feature.deleted'], context: PluginActionContext) => Promise<void>
   onProjectStatusUpdated?: (
     payload: PluginEventMap['project.status.updated'],
+    context: PluginActionContext,
+  ) => Promise<void>
+  onFeatureScopeUpdated?: (
+    payload: PluginEventMap['feature.scope.updated'],
     context: PluginActionContext,
   ) => Promise<void>
 }

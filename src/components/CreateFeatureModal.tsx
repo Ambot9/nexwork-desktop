@@ -92,10 +92,13 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
   const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [preparingRequirement, setPreparingRequirement] = useState(false)
   const [showMemstackContext, setShowMemstackContext] = useState(false)
+  const [projectDependencies, setProjectDependencies] = useState<Record<string, string[]>>({})
+  const [manualProjects, setManualProjects] = useState<string[]>([])
 
   useEffect(() => {
     if (open) {
       setShowMemstackContext(false)
+      setManualProjects([])
       loadData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,10 +112,17 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
       // Filter to managed projects if configured; otherwise use all
       const managedProjects: string[] | undefined = config.userConfig?.managedProjects
-      const projects = (config.projects || [])
-        .map((p: any) => p.name)
-        .filter((name: string) => managedProjects === undefined || managedProjects.includes(name))
+      const dependencyMap = config.userConfig?.projectDependencies || {}
+      const allProjectNames = (config.projects || []).map((p: any) => p.name)
+      const managedSet = new Set<string>(managedProjects === undefined ? allProjectNames : managedProjects)
+
+      Object.values(dependencyMap)
+        .flat()
+        .forEach((dependencyName) => managedSet.add(String(dependencyName)))
+
+      const projects = allProjectNames.filter((name: string) => managedSet.has(name))
       setAvailableProjects(projects)
+      setProjectDependencies(dependencyMap)
 
       // Load templates
       const [templates, pluginData] = await Promise.all([
@@ -148,6 +158,46 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       .replace(/^-|-$/g, '')
       .trim()
       .toLowerCase()
+
+  const resolveProjectDependencies = (selectedProjects: string[]) => {
+    const availableSet = new Set(availableProjects)
+    const resolved = new Set<string>()
+    const queue = [...selectedProjects]
+
+    while (queue.length > 0) {
+      const projectName = queue.shift()
+      if (!projectName || resolved.has(projectName) || !availableSet.has(projectName)) continue
+
+      resolved.add(projectName)
+
+      const dependencies = projectDependencies[projectName] || []
+      dependencies.forEach((dependency) => {
+        if (!resolved.has(dependency) && availableSet.has(dependency)) {
+          queue.push(dependency)
+        }
+      })
+    }
+
+    const resolvedProjects = availableProjects.filter((project) => resolved.has(project))
+    const autoAddedProjects = resolvedProjects.filter((project) => !selectedProjects.includes(project))
+    const autoAddedReasons = autoAddedProjects.reduce(
+      (acc, project) => {
+        acc[project] = selectedProjects.filter((selectedProject) =>
+          (projectDependencies[selectedProject] || []).includes(project),
+        )
+        return acc
+      },
+      {} as Record<string, string[]>,
+    )
+
+    return { resolvedProjects, autoAddedProjects, autoAddedReasons }
+  }
+
+  const handleProjectSelectionChange = (selectedProjects: string[]) => {
+    setManualProjects(selectedProjects)
+    const { resolvedProjects } = resolveProjectDependencies(selectedProjects)
+    form.setFieldValue('projects', resolvedProjects)
+  }
 
   const loadProjectBranches = async (config: any) => {
     const branches: Record<string, string> = {}
@@ -577,6 +627,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       setCurrentStep(0)
       setUseCustomId(false)
       setPlugins([])
+      setManualProjects([])
       onSuccess()
       onClose()
     } catch (error: any) {
@@ -592,6 +643,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
     setCurrentStep(0)
     setUseCustomId(false)
     setPlugins([])
+    setManualProjects([])
     onClose()
   }
 
@@ -731,6 +783,35 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
             can control which projects appear here from Settings → Workspace projects (Managed).
           </Paragraph>
 
+          {(() => {
+            const { autoAddedProjects, autoAddedReasons } = resolveProjectDependencies(manualProjects)
+
+            if (autoAddedProjects.length === 0) {
+              return null
+            }
+
+            return (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Required projects were added automatically"
+                description={
+                  <Space size={[8, 8]} wrap>
+                    {autoAddedProjects.map((project) => (
+                      <Tag key={project} color="blue">
+                        {project}
+                        {autoAddedReasons[project]?.length
+                          ? ` required by ${autoAddedReasons[project].join(', ')}`
+                          : ''}
+                      </Tag>
+                    ))}
+                  </Space>
+                }
+              />
+            )
+          })()}
+
           {Object.values(projectStatus).some((s) => !s.upToDate) && (
             <Alert
               message="Some projects are behind remote"
@@ -753,11 +834,19 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
           )}
 
           <Form.Item name="projects" rules={[{ required: true, message: 'Please select at least one project' }]}>
-            <Checkbox.Group style={{ width: '100%' }}>
+            <Checkbox.Group
+              style={{ width: '100%' }}
+              onChange={(checkedValues) => handleProjectSelectionChange(checkedValues as string[])}
+            >
               <Space direction="vertical" style={{ width: '100%' }}>
                 {availableProjects.map((project) => {
                   const status = projectStatus[project]
                   const needsPull = status && !status.upToDate
+                  const autoAdded =
+                    !manualProjects.includes(project) && (form.getFieldValue('projects') || []).includes(project)
+                  const dependentProjects = manualProjects.filter((selectedProject) =>
+                    (projectDependencies[selectedProject] || []).includes(project),
+                  )
 
                   return (
                     <Card
@@ -781,6 +870,19 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
                           <Space>
                             <FolderGit2 size={16} />
                             <Text strong>{project}</Text>
+                            {autoAdded ? (
+                              <Tooltip
+                                title={
+                                  dependentProjects.length > 0
+                                    ? `Required by ${dependentProjects.join(', ')}`
+                                    : 'Required dependency'
+                                }
+                              >
+                                <Tag color="cyan" style={{ marginInlineStart: 4 }}>
+                                  Auto-added
+                                </Tag>
+                              </Tooltip>
+                            ) : null}
                           </Space>
                         </Checkbox>
 

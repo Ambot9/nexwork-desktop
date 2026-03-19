@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, app } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
@@ -170,6 +171,136 @@ function requireWorkspace(): void {
 // Helper to get ConfigManager instance
 function getConfigManager(): InstanceType<typeof ConfigManager> {
   return new ConfigManager(currentWorkspaceRoot)
+}
+
+function normalizeProjectDependencies(projectDependencies: unknown): Record<string, string[]> {
+  if (!projectDependencies || typeof projectDependencies !== 'object') {
+    return {}
+  }
+
+  return Object.entries(projectDependencies as Record<string, unknown>).reduce(
+    (acc, [projectName, dependencies]) => {
+      if (!Array.isArray(dependencies)) {
+        return acc
+      }
+
+      const cleaned = Array.from(
+        new Set(
+          dependencies
+            .map((dependency) => String(dependency || '').trim())
+            .filter((dependency) => dependency.length > 0 && dependency !== projectName),
+        ),
+      )
+
+      if (cleaned.length > 0) {
+        acc[projectName] = cleaned
+      }
+
+      return acc
+    },
+    {} as Record<string, string[]>,
+  )
+}
+
+function resolveProjectDependencies(
+  selectedProjects: string[],
+  projectDependencies: Record<string, string[]>,
+  availableProjects: string[],
+): string[] {
+  const availableSet = new Set(availableProjects)
+  const resolved = new Set<string>()
+  const queue = [...selectedProjects]
+
+  while (queue.length > 0) {
+    const projectName = queue.shift()
+    if (!projectName || resolved.has(projectName) || !availableSet.has(projectName)) {
+      continue
+    }
+
+    resolved.add(projectName)
+
+    for (const dependency of projectDependencies[projectName] || []) {
+      if (!resolved.has(dependency) && availableSet.has(dependency)) {
+        queue.push(dependency)
+      }
+    }
+  }
+
+  return availableProjects.filter((projectName) => resolved.has(projectName))
+}
+
+function getConfiguredProjects(
+  configManager: InstanceType<typeof ConfigManager>,
+): Array<{ name: string; path: string }> {
+  const config = configManager.loadConfig()
+  return Object.entries((config.projectLocations || {}) as Record<string, string>).map(([name, projectPath]) => ({
+    name,
+    path: projectPath,
+  }))
+}
+
+async function createLocalFeatureBranch(
+  configManager: InstanceType<typeof ConfigManager>,
+  projectName: string,
+  featureBranch: string,
+  baseBranch: string,
+): Promise<void> {
+  const projectConfig = getConfiguredProjects(configManager).find((project) => project.name === projectName)
+  if (!projectConfig) {
+    log.info(`⚠ Project config not found for ${projectName}`)
+    return
+  }
+
+  const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
+
+  log.info(`[${projectName}] Project path: ${projectPath}`)
+  log.info(`[${projectName}] Feature branch: ${featureBranch}`)
+  log.info(`[${projectName}] Base branch: ${baseBranch}`)
+
+  const checkBranch = await execAsync(`git rev-parse --verify ${featureBranch}`, { cwd: projectPath }).catch(() => null)
+
+  if (checkBranch) {
+    log.info(`[${projectName}] Branch ${featureBranch} already exists - skipping`)
+    return
+  }
+
+  log.info(`[${projectName}] Creating ${featureBranch} from ${baseBranch}...`)
+  const result = await execAsync(`git branch ${featureBranch} ${baseBranch}`, { cwd: projectPath })
+  log.info(`✓ Created ${featureBranch} in ${projectName}`)
+  if (result.stderr) {
+    log.info(`[${projectName}] stderr: ${result.stderr}`)
+  }
+}
+
+async function detectBaseBranch(
+  configManager: InstanceType<typeof ConfigManager>,
+  projectName: string,
+): Promise<string> {
+  const projectConfig = getConfiguredProjects(configManager).find((project) => project.name === projectName)
+  if (!projectConfig) {
+    return 'staging'
+  }
+
+  const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
+  const branchResult = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectPath }).catch(() => null)
+  const currentBranch = branchResult?.stdout?.trim()
+
+  return currentBranch || 'staging'
+}
+
+async function pullProjectBaseBranch(
+  configManager: InstanceType<typeof ConfigManager>,
+  projectName: string,
+  baseBranch: string,
+): Promise<void> {
+  const projectConfig = getConfiguredProjects(configManager).find((project) => project.name === projectName)
+  if (!projectConfig) {
+    throw new Error(`Project ${projectName} not found in config`)
+  }
+
+  const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
+  await execAsync(`git checkout ${baseBranch}`, { cwd: projectPath })
+  await execAsync('git pull --no-edit', { cwd: projectPath })
 }
 
 // Helper to update tray with current features
@@ -434,6 +565,16 @@ export function registerIpcHandlers() {
     }
   })
 
+  ipcMain.handle('system:restartAndInstallUpdate', async () => {
+    try {
+      autoUpdater.quitAndInstall(false, true)
+      return { success: true }
+    } catch (error: any) {
+      log.error('Failed to restart and install update:', error)
+      throw new Error(`Failed to restart and install update: ${error.message}`)
+    }
+  })
+
   ipcMain.handle('system:runCommand', async (_, command: string, workingDir?: string) => {
     return new Promise((resolve) => {
       const { exec } = require('child_process')
@@ -574,9 +715,13 @@ export function registerIpcHandlers() {
 
       const configManager = getConfigManager()
       const templateManager = new TemplateManager(currentWorkspaceRoot)
+      const config = configManager.loadConfig()
+      const availableProjects = Object.keys(config.projectLocations || {})
+      const projectDependencies = normalizeProjectDependencies(config.userConfig?.projectDependencies)
+      const resolvedProjects = resolveProjectDependencies(data.projects, projectDependencies, availableProjects)
 
       log.info('Creating feature:', data.name)
-      log.info('Projects to include:', data.projects)
+      log.info('Projects to include:', resolvedProjects)
 
       // Validate feature name is unique
       const existingFeatures = configManager.getAllFeatures()
@@ -586,7 +731,7 @@ export function registerIpcHandlers() {
 
       // Create project statuses using feature name for branches
       // Use selected branch as base, or fall back to current branch
-      const projectStatuses = data.projects.map((projectName: string) => {
+      const projectStatuses = resolvedProjects.map((projectName: string) => {
         const baseBranch = data.selectedBranches?.[projectName] || 'current'
         return {
           name: projectName,
@@ -639,46 +784,17 @@ export function registerIpcHandlers() {
       const readmePath = path.join(featureTrackingDir, 'README.md')
       templateManager.generateReadme(templateName, newFeature, readmePath)
 
-      // Create local feature branches for all selected projects
-      const { exec } = require('child_process')
-      const { promisify } = require('util')
-      const execAsync = promisify(exec)
-
       log.info('Creating local feature branches...')
       log.info('Project statuses:', JSON.stringify(projectStatuses, null, 2))
 
       for (const projectStatus of projectStatuses) {
         try {
-          const projectConfig = configManager.getConfig().projects.find((p: any) => p.name === projectStatus.name)
-          if (!projectConfig) {
-            log.info(`⚠ Project config not found for ${projectStatus.name}`)
-            continue
-          }
-
-          const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
-          const featureBranch = projectStatus.branch
-          const baseBranch = projectStatus.baseBranch
-
-          log.info(`[${projectStatus.name}] Project path: ${projectPath}`)
-          log.info(`[${projectStatus.name}] Feature branch: ${featureBranch}`)
-          log.info(`[${projectStatus.name}] Base branch: ${baseBranch}`)
-
-          // Check if branch already exists
-          const checkBranch = await execAsync(`git rev-parse --verify ${featureBranch}`, { cwd: projectPath }).catch(
-            () => null,
+          await createLocalFeatureBranch(
+            configManager,
+            projectStatus.name,
+            projectStatus.branch,
+            projectStatus.baseBranch,
           )
-
-          if (!checkBranch) {
-            // Create local branch from selected base branch
-            log.info(`[${projectStatus.name}] Creating ${featureBranch} from ${baseBranch}...`)
-            const result = await execAsync(`git branch ${featureBranch} ${baseBranch}`, { cwd: projectPath })
-            log.info(`✓ Created ${featureBranch} in ${projectStatus.name}`)
-            if (result.stderr) {
-              log.info(`[${projectStatus.name}] stderr: ${result.stderr}`)
-            }
-          } else {
-            log.info(`[${projectStatus.name}] Branch ${featureBranch} already exists - skipping`)
-          }
         } catch (error: any) {
           log.error(`❌ Failed to create branch for ${projectStatus.name}:`, error.message)
           if (error.stderr) {
@@ -734,6 +850,140 @@ export function registerIpcHandlers() {
       throw new Error(`Failed to update feature: ${error.message}`)
     }
   })
+
+  ipcMain.handle(
+    'features:addProjects',
+    async (
+      _,
+      featureName: string,
+      requestedProjects: Array<{ name: string; baseBranch?: string; pullFirst?: boolean }> | string[],
+    ) => {
+      try {
+        requireWorkspace()
+
+        if (!Array.isArray(requestedProjects) || requestedProjects.length === 0) {
+          throw new Error('At least one project is required')
+        }
+
+        const configManager = getConfigManager()
+        const feature = configManager.getFeature(featureName)
+
+        if (!feature) {
+          throw new Error(`Feature ${featureName} not found`)
+        }
+
+        const config = configManager.loadConfig()
+        const availableProjects = Object.keys(config.projectLocations || {})
+        const projectDependencies = normalizeProjectDependencies(config.userConfig?.projectDependencies)
+        const normalizedRequests = requestedProjects.map((entry) =>
+          typeof entry === 'string'
+            ? { name: entry, baseBranch: undefined, pullFirst: false }
+            : {
+                name: String(entry?.name || ''),
+                baseBranch: entry?.baseBranch ? String(entry.baseBranch) : undefined,
+                pullFirst: !!entry?.pullFirst,
+              },
+        )
+        const requestMap = new Map(
+          normalizedRequests.filter((entry) => entry.name).map((entry) => [entry.name, entry] as const),
+        )
+        const queue = normalizedRequests.map((entry) => entry.name).filter(Boolean)
+        const resolvedProjectSelections = new Map<string, { name: string; baseBranch?: string; pullFirst?: boolean }>()
+
+        for (const existingProject of feature.projects) {
+          resolvedProjectSelections.set(existingProject.name, {
+            name: existingProject.name,
+            baseBranch: existingProject.baseBranch,
+            pullFirst: false,
+          })
+        }
+
+        while (queue.length > 0) {
+          const projectName = queue.shift()
+          if (!projectName || !availableProjects.includes(projectName) || resolvedProjectSelections.has(projectName)) {
+            continue
+          }
+
+          const explicitSelection = requestMap.get(projectName)
+          resolvedProjectSelections.set(projectName, explicitSelection || { name: projectName })
+
+          for (const dependencyName of projectDependencies[projectName] || []) {
+            if (!resolvedProjectSelections.has(dependencyName)) {
+              if (!requestMap.has(dependencyName)) {
+                requestMap.set(dependencyName, {
+                  name: dependencyName,
+                  baseBranch: explicitSelection?.baseBranch,
+                  pullFirst: explicitSelection?.pullFirst ?? false,
+                })
+              }
+              queue.push(dependencyName)
+            }
+          }
+        }
+
+        const resolvedProjects = resolveProjectDependencies(
+          [...feature.projects.map((project: any) => project.name), ...Array.from(requestMap.keys())],
+          projectDependencies,
+          availableProjects,
+        )
+
+        const existingProjectSet = new Set(feature.projects.map((project: any) => project.name))
+        const projectsToAdd = resolvedProjects.filter((projectName) => !existingProjectSet.has(projectName))
+
+        if (projectsToAdd.length === 0) {
+          return { feature, addedProjects: [] }
+        }
+
+        const branchName = feature.projects[0]?.branch || `feature/${feature.name}`
+        const newProjects = []
+
+        for (const projectName of projectsToAdd) {
+          const requestedProject = requestMap.get(projectName)
+          const baseBranch = requestedProject?.baseBranch || (await detectBaseBranch(configManager, projectName))
+          const projectStatus = {
+            name: projectName,
+            status: 'pending' as const,
+            branch: branchName,
+            baseBranch,
+            worktreePath: '',
+            lastUpdated: new Date().toISOString(),
+          }
+
+          newProjects.push(projectStatus)
+
+          try {
+            if (requestedProject?.pullFirst) {
+              await pullProjectBaseBranch(configManager, projectName, baseBranch)
+            }
+            await createLocalFeatureBranch(configManager, projectName, branchName, baseBranch)
+          } catch (error: any) {
+            log.error(`❌ Failed to create branch for ${projectName}:`, error.message)
+          }
+        }
+
+        const updatedProjects = [...feature.projects, ...newProjects]
+        configManager.updateFeature(featureName, { projects: updatedProjects })
+        const updatedFeature = configManager.getFeature(featureName)
+
+        if (updatedFeature) {
+          await dispatchPluginEvent('feature.scope.updated', {
+            feature: updatedFeature,
+            featureName,
+            addedProjects: projectsToAdd,
+            workspaceRoot: currentWorkspaceRoot,
+          })
+        }
+
+        return {
+          feature: updatedFeature,
+          addedProjects: projectsToAdd,
+        }
+      } catch (error: any) {
+        log.error('Failed to add projects to feature:', error)
+        throw new Error(`Failed to add projects to feature: ${error.message}`)
+      }
+    },
+  )
 
   ipcMain.handle('features:delete', async (_, name: string) => {
     try {

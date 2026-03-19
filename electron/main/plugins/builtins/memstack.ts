@@ -304,4 +304,13 @@ export const memstackPlugin: MainPlugin = {
       workspaceRoot: payload.workspaceRoot,
     })
   },
+  onFeatureScopeUpdated: async (payload, context) => {
+    await postMemstackSync(context.state.config, {
+      eventName: 'feature.scope.updated',
+      feature: payload.feature,
+      featureName: payload.featureName,
+      addedProjects: payload.addedProjects,
+      workspaceRoot: payload.workspaceRoot,
+    })
+  },
 }

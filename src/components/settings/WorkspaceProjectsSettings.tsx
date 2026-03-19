@@ -1,6 +1,6 @@
 import type { Config } from '../../types'
 import { useState } from 'react'
-import { Card, Typography, Collapse, Checkbox, Empty, Space, Button, Input } from 'antd'
+import { Card, Typography, Collapse, Checkbox, Empty, Space, Button, Input, Select, Tag } from 'antd'
 
 const { Title, Text } = Typography
 const { Panel } = Collapse
@@ -8,6 +8,7 @@ const { Panel } = Collapse
 interface WorkspaceProjectsSettingsProps {
   config: Config | null
   onManagedProjectsChange: (managedProjects: string[]) => void
+  onProjectDependenciesChange: (projectDependencies: Record<string, string[]>) => void
   projectBranches?: Record<string, string>
 }
 
@@ -57,6 +58,7 @@ function groupProjects(config: Config | null): ProjectGroup[] {
 export function WorkspaceProjectsSettings({
   config,
   onManagedProjectsChange,
+  onProjectDependenciesChange,
   projectBranches,
 }: WorkspaceProjectsSettingsProps) {
   const groups = groupProjects(config)
@@ -64,6 +66,7 @@ export function WorkspaceProjectsSettings({
   const allProjectNames = config?.projects?.map((p) => p.name) || []
   const managedFromConfig = config?.userConfig?.managedProjects
   const managedSet = new Set<string>(managedFromConfig === undefined ? allProjectNames : managedFromConfig)
+  const projectDependencies = config?.userConfig?.projectDependencies || {}
 
   const [searchTerm, setSearchTerm] = useState('')
   const normalizedSearch = searchTerm.trim().toLowerCase()
@@ -89,7 +92,8 @@ export function WorkspaceProjectsSettings({
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
             Nexwork scans inside your workspace folder to find Git projects. Mark projects as Managed to control which
-            ones appear in Create Feature.
+            ones appear in Create Feature. You can also define required project dependencies so selecting one project
+            auto-includes the others it needs.
           </Text>
         </div>
 
@@ -195,6 +199,46 @@ export function WorkspaceProjectsSettings({
                                     Branch: {projectBranches[project.name]}
                                   </Text>
                                 )}
+                                <div style={{ marginTop: 8 }}>
+                                  <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                                    Required dependencies
+                                  </Text>
+                                  <Select
+                                    mode="multiple"
+                                    allowClear
+                                    size="small"
+                                    placeholder="Add required projects"
+                                    style={{ minWidth: 260, maxWidth: 420 }}
+                                    value={projectDependencies[project.name] || []}
+                                    onChange={(value) => {
+                                      const nextDependencies: Record<string, string[]> = {
+                                        ...projectDependencies,
+                                      }
+
+                                      const cleaned = Array.from(new Set(value.filter((name) => name !== project.name)))
+
+                                      if (cleaned.length > 0) {
+                                        nextDependencies[project.name] = cleaned
+                                      } else {
+                                        delete nextDependencies[project.name]
+                                      }
+
+                                      onProjectDependenciesChange(nextDependencies)
+                                    }}
+                                    options={allProjectNames
+                                      .filter((name) => name !== project.name)
+                                      .map((name) => ({ value: name, label: name }))}
+                                  />
+                                  {(projectDependencies[project.name] || []).length > 0 && (
+                                    <Space size={[6, 6]} wrap style={{ marginTop: 6 }}>
+                                      {(projectDependencies[project.name] || []).map((dependencyName) => (
+                                        <Tag key={`${project.name}-${dependencyName}`} color="blue">
+                                          {dependencyName}
+                                        </Tag>
+                                      ))}
+                                    </Space>
+                                  )}
+                                </div>
                               </div>
                               <Checkbox
                                 checked={managedSet.has(project.name)}

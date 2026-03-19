@@ -178,6 +178,11 @@ export async function dispatchPluginEvent<K extends keyof PluginEventMap>(
           pluginId: plugin.id,
           state,
         })
+      } else if (eventName === 'feature.scope.updated' && plugin.onFeatureScopeUpdated) {
+        await plugin.onFeatureScopeUpdated(payload as PluginEventMap['feature.scope.updated'], {
+          pluginId: plugin.id,
+          state,
+        })
       }
 
       results.push({ pluginId: plugin.id, result })

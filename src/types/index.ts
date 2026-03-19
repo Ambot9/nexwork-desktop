@@ -48,6 +48,11 @@ export interface UserConfig {
   exclude?: string[]
   defaultTemplate?: string
   /**
+   * Optional map of project -> required project dependencies.
+   * Example: { coloris: ['core'] }
+   */
+  projectDependencies?: Record<string, string[]>
+  /**
    * Optional list of project names that Nexwork should manage in this workspace.
    * If omitted or empty, all discovered projects are considered managed.
    */

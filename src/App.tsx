@@ -17,6 +17,8 @@ import {
   Input,
   Segmented,
   Tag,
+  notification,
+  Alert,
 } from 'antd'
 import {
   FolderGit2,
@@ -96,6 +98,12 @@ function App() {
   const [authAvatar, setAuthAvatar] = useState('')
   const [_authProvider, setAuthProvider] = useState('')
   const [_authChecked, setAuthChecked] = useState(false)
+  const [updateState, setUpdateState] = useState<{
+    status: 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
+    version?: string
+    percent?: number
+    message?: string
+  }>({ status: 'idle' })
   const {
     token: { colorBgContainer },
   } = theme.useToken()
@@ -219,15 +227,149 @@ function App() {
   useEffect(() => {
     const handleOpenCreate = () => handleCreateFeature()
     const handleOpenSettings = () => setCurrentView('settings')
+    const handleUpdateAvailable = (payload?: { version?: string }) => {
+      setUpdateState({
+        status: 'available',
+        version: payload?.version,
+      })
+      notification.info({
+        key: 'app-update-available',
+        message: 'Update Available',
+        description: payload?.version
+          ? `Nexwork ${payload.version} is available. The update is downloading in the background.`
+          : 'A new version of Nexwork is available. The update is downloading in the background.',
+        duration: 6,
+      })
+    }
+    const handleUpdateDownloaded = (payload?: { version?: string }) => {
+      setUpdateState({
+        status: 'downloaded',
+        version: payload?.version,
+        percent: 100,
+      })
+      notification.success({
+        key: 'app-update-downloaded',
+        message: 'Update Ready',
+        description: payload?.version
+          ? `Nexwork ${payload.version} has been downloaded. Restart to install the update.`
+          : 'A new version has been downloaded. Restart to install the update.',
+        duration: 0,
+        btn: (
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => {
+              window.nexworkAPI.system.restartAndInstallUpdate().catch(() => {
+                message.error('Failed to restart and install update')
+              })
+            }}
+          >
+            Restart & Update
+          </Button>
+        ),
+      })
+    }
+    const handleDownloadProgress = (payload?: { percent?: number }) => {
+      const percent = payload?.percent
+      if (typeof percent === 'number') {
+        setUpdateState((prev) => ({
+          status: 'downloading',
+          version: prev.version,
+          percent: Math.round(percent),
+        }))
+      }
+    }
+    const handleUpdateNotAvailable = () => {
+      setUpdateState((prev) => (prev.status === 'downloaded' ? prev : { status: 'idle' }))
+    }
+    const handleUpdateError = (payload?: { message?: string }) => {
+      setUpdateState({
+        status: 'error',
+        message: payload?.message || 'Nexwork could not check for updates.',
+      })
+      notification.warning({
+        key: 'app-update-error',
+        message: 'Update Check Failed',
+        description: payload?.message || 'Nexwork could not check for updates.',
+        duration: 5,
+      })
+    }
 
     window.nexworkAPI.on('open-create-dialog', handleOpenCreate)
     window.nexworkAPI.on('open-settings', handleOpenSettings)
+    window.nexworkAPI.on('app-update:available', handleUpdateAvailable)
+    window.nexworkAPI.on('app-update:downloaded', handleUpdateDownloaded)
+    window.nexworkAPI.on('app-update:download-progress', handleDownloadProgress)
+    window.nexworkAPI.on('app-update:not-available', handleUpdateNotAvailable)
+    window.nexworkAPI.on('app-update:error', handleUpdateError)
 
     return () => {
       window.nexworkAPI.off('open-create-dialog', handleOpenCreate)
       window.nexworkAPI.off('open-settings', handleOpenSettings)
+      window.nexworkAPI.off('app-update:available', handleUpdateAvailable)
+      window.nexworkAPI.off('app-update:downloaded', handleUpdateDownloaded)
+      window.nexworkAPI.off('app-update:download-progress', handleDownloadProgress)
+      window.nexworkAPI.off('app-update:not-available', handleUpdateNotAvailable)
+      window.nexworkAPI.off('app-update:error', handleUpdateError)
     }
   }, [handleCreateFeature])
+
+  const renderUpdateBanner = () => {
+    if (updateState.status === 'idle') {
+      return null
+    }
+
+    if (updateState.status === 'available' || updateState.status === 'downloading') {
+      return (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 12 }}
+          message={updateState.version ? `Update ${updateState.version} is downloading` : 'Update is downloading'}
+          description={
+            updateState.status === 'downloading' && typeof updateState.percent === 'number'
+              ? `Downloading the latest Nexwork version: ${updateState.percent}%`
+              : 'A new version of Nexwork is available and is downloading in the background.'
+          }
+        />
+      )
+    }
+
+    if (updateState.status === 'downloaded') {
+      return (
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 12 }}
+          message={updateState.version ? `Update ${updateState.version} is ready` : 'Update is ready'}
+          description="Restart Nexwork to install the latest version."
+          action={
+            <Button
+              type="primary"
+              size="small"
+              onClick={() => {
+                window.nexworkAPI.system.restartAndInstallUpdate().catch(() => {
+                  message.error('Failed to restart and install update')
+                })
+              }}
+            >
+              Restart & Update
+            </Button>
+          }
+        />
+      )
+    }
+
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 16, borderRadius: 12 }}
+        message="Update check failed"
+        description={updateState.message || 'Nexwork could not check for updates.'}
+      />
+    )
+  }
 
   const handleCompleteFeature = (featureName: string, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -726,7 +868,10 @@ function App() {
           )}
         </Header>
         <Content style={{ padding: 24, overflow: 'auto', maxHeight: 'calc(100vh - 64px)' }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>{renderContent()}</div>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+            {renderUpdateBanner()}
+            {renderContent()}
+          </div>
         </Content>
       </Layout>
 
