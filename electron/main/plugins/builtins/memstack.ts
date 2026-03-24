@@ -321,10 +321,6 @@ export const memstackPlugin: MainPlugin = {
     }
   },
   onFeatureCompleted: async (payload, context) => {
-    if (!payload.syncToMemstack) {
-      return
-    }
-
     try {
       await postMemstackSync(context.state.config, {
         eventName: 'feature.completed',

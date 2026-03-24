@@ -1078,56 +1078,52 @@ export function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle(
-    'features:complete',
-    async (_, name: string, _cleanup: boolean, options?: { syncToMemstack?: boolean }) => {
-      try {
-        requireWorkspace()
-        const configManager = getConfigManager()
-        const feature = configManager.getFeature(name)
+  ipcMain.handle('features:complete', async (_, name: string, _cleanup: boolean) => {
+    try {
+      requireWorkspace()
+      const configManager = getConfigManager()
+      const feature = configManager.getFeature(name)
 
-        if (feature) {
-          try {
-            const { authStore } = await import('./auth-store')
-            const auth = authStore.get()
-            const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+      if (feature) {
+        try {
+          const { authStore } = await import('./auth-store')
+          const auth = authStore.get()
+          const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
 
-            if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
-              throw new Error('Cannot complete feature owned by a different account')
-            }
-
-            if (!ownerAccountId && feature.ownerAccountId) {
-              throw new Error('Cannot complete feature owned by a specific account in local mode')
-            }
-          } catch (authError: any) {
-            if (authError?.message?.startsWith('Cannot complete feature')) {
-              throw authError
-            }
-            // Otherwise ignore authStore errors
+          if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
+            throw new Error('Cannot complete feature owned by a different account')
           }
 
-          // Mark all projects as completed
-          feature.projects.forEach((project: any) => {
-            configManager.updateProjectStatus(name, project.name, 'completed')
-          })
-
-          const completedFeature = configManager.getFeature(name)
-          const pluginResults = await dispatchPluginEvent('feature.completed', {
-            feature: completedFeature,
-            workspaceRoot: currentWorkspaceRoot,
-            syncToMemstack: !!options?.syncToMemstack,
-          })
-          applyPluginRefsToFeature(configManager, name, pluginResults)
-
-          updateTrayWithFeatures()
-          notifyFeatureCompleted(feature.name)
+          if (!ownerAccountId && feature.ownerAccountId) {
+            throw new Error('Cannot complete feature owned by a specific account in local mode')
+          }
+        } catch (authError: any) {
+          if (authError?.message?.startsWith('Cannot complete feature')) {
+            throw authError
+          }
+          // Otherwise ignore authStore errors
         }
-      } catch (error: any) {
-        log.error('Failed to complete feature:', error)
-        throw new Error(`Failed to complete feature: ${error.message}`)
+
+        // Mark all projects as completed
+        feature.projects.forEach((project: any) => {
+          configManager.updateProjectStatus(name, project.name, 'completed')
+        })
+
+        const completedFeature = configManager.getFeature(name)
+        const pluginResults = await dispatchPluginEvent('feature.completed', {
+          feature: completedFeature,
+          workspaceRoot: currentWorkspaceRoot,
+        })
+        applyPluginRefsToFeature(configManager, name, pluginResults)
+
+        updateTrayWithFeatures()
+        notifyFeatureCompleted(feature.name)
       }
-    },
-  )
+    } catch (error: any) {
+      log.error('Failed to complete feature:', error)
+      throw new Error(`Failed to complete feature: ${error.message}`)
+    }
+  })
 
   // Clean up expired feature (delete worktrees, branches, and folder)
   ipcMain.handle('features:cleanupExpired', async (_, name: string) => {

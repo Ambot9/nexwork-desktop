@@ -1,18 +1,5 @@
 import { useState, useEffect } from 'react'
-import {
-  message,
-  Modal,
-  Space,
-  Typography,
-  DatePicker,
-  Alert,
-  Button,
-  Select,
-  Switch,
-  Card,
-  Checkbox,
-  Tabs,
-} from 'antd'
+import { message, Modal, Space, Typography, DatePicker, Alert, Button, Select, Switch, Card, Tabs } from 'antd'
 import dayjs from 'dayjs'
 import type { Feature, FeatureStats } from '../types'
 import type { PluginDescriptor } from '../plugins/types'
@@ -431,7 +418,6 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     const memstackReady = plugins.some(
       (plugin) => plugin.id === 'memstack' && plugin.enabled && plugin.status.state === 'ready',
     )
-    let syncToMemstack = memstackReady && Boolean(feature.pluginRefs?.memstack?.tracked)
 
     Modal.confirm({
       title: 'Complete Feature?',
@@ -470,30 +456,9 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             You can still access this feature later. This just marks it as finished.
           </Text>
           {memstackReady && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                padding: '10px 12px',
-                border: '1px solid rgba(15, 23, 42, 0.08)',
-                borderRadius: 12,
-              }}
-            >
-              <div>
-                <Text strong>Sync to Feature Memory</Text>
-                <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
-                  Store the final completion state in MemStack when this feature is completed.
-                </Text>
-              </div>
-              <Checkbox
-                defaultChecked={syncToMemstack}
-                onChange={(checkedEvent) => {
-                  syncToMemstack = checkedEvent.target.checked
-                }}
-              />
-            </div>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+              ✓ Feature Memory will be updated automatically.
+            </Text>
           )}
         </Space>
       ),
@@ -503,7 +468,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       onOk: async () => {
         try {
           message.loading({ content: 'Completing feature...', key: 'complete-feature', duration: 0 })
-          await window.nexworkAPI.features.complete(featureName, true, { syncToMemstack })
+          await window.nexworkAPI.features.complete(featureName, true)
           message.success({ content: 'Feature completed successfully!', key: 'complete-feature', duration: 3 })
           onBack()
         } catch (error: any) {
