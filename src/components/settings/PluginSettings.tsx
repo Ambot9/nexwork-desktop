@@ -36,6 +36,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
   const [repoPickerPluginId, setRepoPickerPluginId] = useState<string | null>(null)
   const [repoPickerLoading, setRepoPickerLoading] = useState(false)
   const [repoPickerAccountLabel, setRepoPickerAccountLabel] = useState('')
+  const [repoPickerError, setRepoPickerError] = useState<{ message: string; isTokenExpired: boolean } | null>(null)
   const [catalogQuery, setCatalogQuery] = useState('')
   const [repoPickerRepos, setRepoPickerRepos] = useState<
     Array<{
@@ -111,9 +112,19 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
   const handleLoadRepos = async (plugin: PluginDescriptor) => {
     try {
       setRepoPickerLoading(true)
+      setRepoPickerError(null)
       const result = await window.nexworkAPI.plugins.runAction(plugin.id, 'listStorageRepos')
       if (!result.success) {
-        message.error(result.error || 'Failed to load repositories from the active Git account.')
+        const errorMsg = result.error || 'Failed to load repositories from the active Git account.'
+        if (errorMsg.includes('TOKEN_EXPIRED')) {
+          setRepoPickerError({
+            message: 'Your Git token has expired or belongs to a different session. Please re-authenticate.',
+            isTokenExpired: true,
+          })
+          setRepoPickerPluginId(plugin.id)
+        } else {
+          message.error(errorMsg)
+        }
         return
       }
 
@@ -420,6 +431,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
             setRepoPickerPluginId(null)
             setRepoPickerRepos([])
             setRepoPickerAccountLabel('')
+            setRepoPickerError(null)
           }}
           footer={null}
           width={720}
@@ -433,7 +445,33 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
               description={repoPickerAccountLabel || 'Repository list loaded from the current Git account in Nexwork.'}
             />
 
-            {repoPickerRepos.length === 0 ? (
+            {repoPickerError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="Authentication Required"
+                description={
+                  <Space direction="vertical" style={{ marginTop: 8 }}>
+                    <Text>{repoPickerError.message}</Text>
+                    {repoPickerError.isTokenExpired && (
+                      <Button
+                        type="primary"
+                        danger
+                        onClick={() => {
+                          setRepoPickerPluginId(null)
+                          setRepoPickerError(null)
+                          // Tell Settings layout to go to Git account page
+                          // The `Settings` layout responds to the URL or we can use an event
+                          window.location.hash = '#/settings/git'
+                        }}
+                      >
+                        Re-authenticate Git Account
+                      </Button>
+                    )}
+                  </Space>
+                }
+              />
+            ) : repoPickerRepos.length === 0 ? (
               <Alert
                 type="warning"
                 showIcon

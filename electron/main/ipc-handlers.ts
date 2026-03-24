@@ -2513,6 +2513,13 @@ export function registerIpcHandlers() {
         const avatar = avatarOut.trim()
         const id = `gitlab:${user}`
         const now = new Date().toISOString()
+        let glabToken = ''
+        try {
+          const { stdout: t } = await execAsync('glab auth token', { timeout: 5000 })
+          glabToken = t.trim()
+        } catch {
+          /* no token */
+        }
         const current = authStore.get()
         const accounts = current.accounts || []
         const existingIndex = accounts.findIndex((a: any) => a.id === id)
@@ -2522,6 +2529,7 @@ export function registerIpcHandlers() {
           user,
           avatar,
           lastUsedAt: now,
+          ...(glabToken ? { token: glabToken } : {}),
         }
         if (existingIndex >= 0) {
           accounts[existingIndex] = updatedAccount
@@ -2539,6 +2547,13 @@ export function registerIpcHandlers() {
           const avatar = data.avatar_url || ''
           const id = `gitlab:${user}`
           const now = new Date().toISOString()
+          let glabToken2 = ''
+          try {
+            const { stdout: t } = await execAsync('glab auth token', { timeout: 5000 })
+            glabToken2 = t.trim()
+          } catch {
+            /* no token */
+          }
           const current = authStore.get()
           const accounts = current.accounts || []
           const existingIndex = accounts.findIndex((a: any) => a.id === id)
@@ -2548,6 +2563,7 @@ export function registerIpcHandlers() {
             user,
             avatar,
             lastUsedAt: now,
+            ...(glabToken2 ? { token: glabToken2 } : {}),
           }
           if (existingIndex >= 0) {
             accounts[existingIndex] = updatedAccount
@@ -2649,7 +2665,32 @@ export function registerIpcHandlers() {
             const data = JSON.parse(rawOut)
             const user = data.username || 'GitLab User'
             const avatar = data.avatar_url || ''
-            authStore.set({ provider: 'gitlab', user, avatar })
+            let glabToken3 = ''
+            try {
+              const { stdout: t } = await execAsync('glab auth token', { timeout: 5000 })
+              glabToken3 = t.trim()
+            } catch {
+              /* no token */
+            }
+            const id = `gitlab:${user}`
+            const now = new Date().toISOString()
+            const current = authStore.get()
+            const accounts = current.accounts || []
+            const existingIndex = accounts.findIndex((a: any) => a.id === id)
+            const updatedAccount = {
+              id,
+              provider: 'gitlab' as const,
+              user,
+              avatar,
+              lastUsedAt: now,
+              ...(glabToken3 ? { token: glabToken3 } : {}),
+            }
+            if (existingIndex >= 0) {
+              accounts[existingIndex] = updatedAccount
+            } else {
+              accounts.push(updatedAccount)
+            }
+            authStore.set({ provider: 'gitlab', user, avatar, accounts, activeAccountId: id })
             resolve({ success: true, user, avatar })
           } catch {
             authStore.set({ provider: 'gitlab', user: 'GitLab User', avatar: '' })

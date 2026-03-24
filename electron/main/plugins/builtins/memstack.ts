@@ -126,6 +126,9 @@ async function listGithubRepos(token: string) {
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('TOKEN_EXPIRED: Your GitHub token has expired or is invalid. Please re-authenticate.')
+    }
     throw new Error(`Failed to load GitHub repositories (${response.status})`)
   }
 
@@ -152,6 +155,9 @@ async function listGitlabRepos(token: string, baseUrl: string, provider: 'gitlab
   )
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('TOKEN_EXPIRED: Your GitLab token has expired or is invalid. Please re-authenticate.')
+    }
     throw new Error(`Failed to load GitLab repositories (${response.status})`)
   }
 
