@@ -317,6 +317,13 @@ function App() {
         status: 'error',
         message: payload?.message || 'Nexwork could not check for updates.',
       })
+
+      const msg = payload?.message || ''
+      // Ignore unsigned Apple update errors and 404 mac updater missing files since we intentionally bypassed macOS codesign
+      if (msg.includes('code object is not signed at all') || msg.includes('latest-mac.yml')) {
+        return
+      }
+
       notification.warning({
         key: 'app-update-error',
         message: 'Update Check Failed',
