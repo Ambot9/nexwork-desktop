@@ -35,6 +35,8 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
   const [refreshing, setRefreshing] = useState(false)
   const [repoPickerPluginId, setRepoPickerPluginId] = useState<string | null>(null)
   const [repoPickerLoading, setRepoPickerLoading] = useState(false)
+  const [repoPickerToken, setRepoPickerToken] = useState('')
+  const [repoPickerUpdatingToken, setRepoPickerUpdatingToken] = useState(false)
   const [repoPickerAccountLabel, setRepoPickerAccountLabel] = useState('')
   const [repoPickerError, setRepoPickerError] = useState<{ message: string; isTokenExpired: boolean } | null>(null)
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -432,6 +434,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
             setRepoPickerRepos([])
             setRepoPickerAccountLabel('')
             setRepoPickerError(null)
+            setRepoPickerToken('')
           }}
           footer={null}
           width={720}
@@ -454,17 +457,53 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                   <Space direction="vertical" style={{ marginTop: 8 }}>
                     <Text>{repoPickerError.message}</Text>
                     {repoPickerError.isTokenExpired && (
-                      <Button
-                        type="primary"
-                        danger
-                        onClick={() => {
-                          setRepoPickerPluginId(null)
-                          setRepoPickerError(null)
-                          window.dispatchEvent(new CustomEvent('navigate', { detail: 'git-auth' }))
-                        }}
-                      >
-                        Re-authenticate Git Account
-                      </Button>
+                      <div style={{ marginTop: 8 }}>
+                        <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 4 }}>
+                          New Personal Access Token
+                        </Text>
+                        <Space>
+                          <Input.Password
+                            placeholder="Paste your new Git token here"
+                            value={repoPickerToken}
+                            onChange={(e) => setRepoPickerToken(e.target.value)}
+                            style={{ minWidth: 300 }}
+                          />
+                          <Button
+                            type="primary"
+                            loading={repoPickerUpdatingToken}
+                            disabled={!repoPickerToken.trim()}
+                            onClick={async () => {
+                              try {
+                                if (!repoPickerPluginId) return
+                                setRepoPickerUpdatingToken(true)
+
+                                const auth = await window.nexworkAPI.gitAuth.checkAuth()
+                                if (!auth.authenticated) throw new Error('No active account to update')
+
+                                await window.nexworkAPI.gitAuth.saveAuth({
+                                  provider: auth.provider,
+                                  user: auth.user,
+                                  avatar: auth.avatar,
+                                  token: repoPickerToken.trim(),
+                                })
+
+                                message.success('Token updated successfully')
+                                setRepoPickerToken('')
+
+                                // Auto-retry loading the repos
+                                const plugin = plugins.find((p) => p.id === repoPickerPluginId)
+                                if (plugin) await handleLoadRepos(plugin)
+                              } catch (err: any) {
+                                message.error(err.message || 'Failed to update token')
+                              } finally {
+                                setRepoPickerUpdatingToken(false)
+                              }
+                            }}
+                          >
+                            Update & Retry
+                          </Button>
+                        </Space>
+                      </div>
                     )}
                   </Space>
                 }
