@@ -190,6 +190,12 @@ export async function dispatchPluginEvent<K extends keyof PluginEventMap>(
       results.push({ pluginId: plugin.id, result })
     } catch (error: any) {
       log.warn(`Plugin event failed for ${plugin.id} on ${eventName}:`, error.message || error)
+      try {
+        const { dialog } = require('electron')
+        dialog.showErrorBox(`Plugin Sync Failed (${plugin.name || plugin.id})`, error.message || String(error))
+      } catch (e) {
+        // ignore if dialog fails
+      }
     }
   }
 
