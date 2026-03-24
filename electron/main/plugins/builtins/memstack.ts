@@ -328,6 +328,25 @@ export const memstackPlugin: MainPlugin = {
   },
   onFeatureCompleted: async (payload, context) => {
     try {
+      const storageRepoFullName =
+        typeof context.state.config?.storageRepoFullName === 'string'
+          ? context.state.config.storageRepoFullName.trim()
+          : ''
+      if (!storageRepoFullName) {
+        throw new Error(
+          'MemStack push aborted: "Storage Repository" is completely empty! Please open Nexwork Settings -> Built-in Plugins -> Feature Memory and type your owner/repo target in the Storage Repository box.',
+        )
+      }
+
+      let gitAccount
+      try {
+        gitAccount = getActiveGitContext()
+      } catch (err) {
+        throw new Error(
+          'MemStack push aborted: You have no active Git account with a saved token. Re-authenticate on the Dashboard.',
+        )
+      }
+
       await postMemstackSync(context.state.config, {
         eventName: 'feature.completed',
         feature: payload.feature,
