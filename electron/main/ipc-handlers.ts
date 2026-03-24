@@ -2464,6 +2464,7 @@ export function registerIpcHandlers() {
           provider,
           user: active?.user || user,
           avatar: active?.avatar || avatar,
+          gitlabUrl: active?.gitlabUrl || authStore.get().gitlabUrl,
         }
       }
 

@@ -484,6 +484,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                                   provider: auth.provider,
                                   user: auth.user,
                                   avatar: auth.avatar,
+                                  gitlabUrl: auth.gitlabUrl,
                                   token: repoPickerToken.trim(),
                                 })
 

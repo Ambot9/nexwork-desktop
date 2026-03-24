@@ -235,7 +235,13 @@ declare global {
         getConflictFiles: (workingDir: string) => Promise<{ success: boolean; files: string[] }>
       }
       gitAuth: {
-        checkAuth: () => Promise<{ authenticated: boolean; provider: string; user: string; avatar: string }>
+        checkAuth: () => Promise<{
+          authenticated: boolean
+          provider: string
+          user: string
+          avatar: string
+          gitlabUrl?: string
+        }>
         githubLogin: () => Promise<{
           success: boolean
           user?: string
