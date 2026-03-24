@@ -94,15 +94,7 @@ function getIDELabel(projectName: string, ctx: FeatureDetailsContext): string {
 }
 
 export function FeatureWorkspace({ ctx }: Props) {
-  const {
-    feature,
-    stats,
-    featureFolderPath,
-    projectWorktreeStatus,
-    gitStatuses,
-    localFeatureBranches,
-    projectTerminalAppPreferences,
-  } = ctx
+  const { feature, stats, featureFolderPath, projectWorktreeStatus, gitStatuses, projectTerminalAppPreferences } = ctx
 
   if (!featureFolderPath || !feature) return null
 
