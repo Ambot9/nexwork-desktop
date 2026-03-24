@@ -1,7 +1,21 @@
 import { useState, useEffect } from 'react'
-import { message, Modal, Space, Typography, DatePicker, Alert, Button, Select, Switch, Card } from 'antd'
+import {
+  message,
+  Modal,
+  Space,
+  Typography,
+  DatePicker,
+  Alert,
+  Button,
+  Select,
+  Switch,
+  Card,
+  Checkbox,
+  Tabs,
+} from 'antd'
 import dayjs from 'dayjs'
 import type { Feature, FeatureStats } from '../types'
+import type { PluginDescriptor } from '../plugins/types'
 import { IntegratedTerminal } from '../components/IntegratedTerminal'
 import ChangesViewer from '../components/ChangesViewer'
 import CommitTimeline from '../components/CommitTimeline'
@@ -13,7 +27,6 @@ import {
   CommitModal,
   MergeModal,
   FeatureWorkspace,
-  WorktreesList,
   GitSyncModal,
   ConflictViewer,
   PRModal,
@@ -28,6 +41,29 @@ import type {
 import { Err, errMsg, classifyGitError } from '../components/feature-details/types'
 
 const { Text } = Typography
+const MEMSTACK_STALE_THRESHOLD_MS = 5000
+
+function getMemstackSyncState(
+  feature?: Feature | null,
+): 'not_tracked' | 'not_synced' | 'up_to_date' | 'out_of_date' | 'failed' {
+  const ref = feature?.pluginRefs?.memstack
+
+  if (!ref?.tracked) {
+    return 'not_tracked'
+  }
+
+  if (ref.lastSyncStatus === 'failed') {
+    return 'failed'
+  }
+
+  if (!ref.lastSyncAt) {
+    return 'not_synced'
+  }
+
+  const updatedAt = feature?.updatedAt ? new Date(feature.updatedAt).getTime() : 0
+  const lastSyncAt = new Date(ref.lastSyncAt).getTime()
+  return updatedAt - lastSyncAt > MEMSTACK_STALE_THRESHOLD_MS ? 'out_of_date' : 'up_to_date'
+}
 
 interface FeatureDetailsProps {
   featureName: string
@@ -53,6 +89,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const [commitMessage, setCommitMessage] = useState('')
   const [selectedProjectsForCommit, setSelectedProjectsForCommit] = useState<string[]>([])
   const [selectedProjectsForMerge, setSelectedProjectsForMerge] = useState<string[]>([])
+  const [mergeTargetBranch, setMergeTargetBranch] = useState<string>('staging')
+  const [mergeAvailableBranches, setMergeAvailableBranches] = useState<Record<string, string[]>>({})
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null)
   const [prModalOpen, setPrModalOpen] = useState(false)
   const [worktreeInfo, setWorktreeInfo] = useState<Record<string, string | null>>({})
@@ -70,6 +108,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const [addProjectBaseBranches, setAddProjectBaseBranches] = useState<Record<string, string>>({})
   const [addProjectPullFirst, setAddProjectPullFirst] = useState<Record<string, boolean>>({})
   const [addProjectsAvailableBranches, setAddProjectsAvailableBranches] = useState<Record<string, string[]>>({})
+  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [preferredIDE] = useState<string>(() => {
     return localStorage.getItem('preferredIDE') || 'vscode'
   })
@@ -114,12 +153,14 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     try {
       if (!silent) setLoading(true)
       const statsData = await window.nexworkAPI.stats.getFeatureStats(featureName)
-      const [featureData, config] = await Promise.all([
+      const [featureData, config, pluginData] = await Promise.all([
         window.nexworkAPI.features.getByName(featureName),
         window.nexworkAPI.config.load(),
+        window.nexworkAPI.plugins.getAll().catch(() => []),
       ])
       setFeature(featureData)
       setStats(statsData)
+      setPlugins(pluginData)
       setWorkspaceRoot(config.workspaceRoot)
       setProjectDependencies(config.userConfig?.projectDependencies || {})
       setAvailableProjects((config.projects || []).map((project: any) => project.name))
@@ -234,6 +275,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       }),
     )
 
+    setMergeAvailableBranches(branchOptions)
     setAddProjectsAvailableBranches(branchOptions)
     setAddProjectBaseBranches((prev) => ({ ...baseBranchDefaults, ...prev }))
   }
@@ -386,6 +428,11 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     const worktreeCount = feature.projects.filter((p) => p.worktreePath).length
     const inProgressCount = feature.projects.filter((p) => p.status === 'in_progress').length
     const completedCount = feature.projects.filter((p) => p.status === 'completed').length
+    const memstackReady = plugins.some(
+      (plugin) => plugin.id === 'memstack' && plugin.enabled && plugin.status.state === 'ready',
+    )
+    let syncToMemstack = memstackReady && Boolean(feature.pluginRefs?.memstack?.tracked)
+
     Modal.confirm({
       title: 'Complete Feature?',
       content: (
@@ -422,6 +469,32 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
             You can still access this feature later. This just marks it as finished.
           </Text>
+          {memstackReady && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '10px 12px',
+                border: '1px solid rgba(15, 23, 42, 0.08)',
+                borderRadius: 12,
+              }}
+            >
+              <div>
+                <Text strong>Sync to Feature Memory</Text>
+                <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                  Store the final completion state in MemStack when this feature is completed.
+                </Text>
+              </div>
+              <Checkbox
+                defaultChecked={syncToMemstack}
+                onChange={(checkedEvent) => {
+                  syncToMemstack = checkedEvent.target.checked
+                }}
+              />
+            </div>
+          )}
         </Space>
       ),
       okText: 'Complete Feature',
@@ -430,7 +503,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       onOk: async () => {
         try {
           message.loading({ content: 'Completing feature...', key: 'complete-feature', duration: 0 })
-          await window.nexworkAPI.features.complete(featureName, true)
+          await window.nexworkAPI.features.complete(featureName, true, { syncToMemstack })
           message.success({ content: 'Feature completed successfully!', key: 'complete-feature', duration: 3 })
           onBack()
         } catch (error: any) {
@@ -447,6 +520,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const handleDelete = () => {
     if (!feature) return
     const worktreeCount = feature.projects.filter((p) => p.worktreePath).length
+    const memstackSyncState = getMemstackSyncState(feature)
+
     Modal.confirm({
       title: 'Delete Feature?',
       content: (
@@ -466,7 +541,39 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             </li>
             <li>Feature tracking folder and all files</li>
           </ul>
-          <Text type="danger">This action cannot be undone!</Text>
+          {memstackSyncState !== 'not_tracked' ? (
+            memstackSyncState === 'up_to_date' ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="Feature Memory may still remain in shared storage"
+                description="Deleting this feature removes the local Nexwork record only. Previously synced MemStack data may still exist in the storage repo or MemStack service."
+              />
+            ) : memstackSyncState === 'failed' ? (
+              <Alert
+                type="error"
+                showIcon
+                message="Feature Memory sync failed"
+                description="The latest MemStack sync did not succeed. Shared memory may be incomplete or outdated if you delete this feature now."
+              />
+            ) : memstackSyncState === 'out_of_date' ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="Feature Memory is out of date"
+                description="Local feature changes appear newer than the last successful MemStack sync. Deleting now may remove context that has not been stored yet."
+              />
+            ) : (
+              <Alert
+                type="warning"
+                showIcon
+                message="Feature Memory may not be synced yet"
+                description="This feature is tracked with Feature Memory, but no sync marker was found yet. If you delete it now, requirement or implementation context may be lost before it is stored."
+              />
+            )
+          ) : (
+            <Text type="danger">This action cannot be undone!</Text>
+          )}
         </Space>
       ),
       okText: 'Delete',
@@ -745,25 +852,24 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         message.warning(Err.WorktreeNotFound)
         return
       }
-      const config = await window.nexworkAPI.config.load()
-      const project = config.projects.find((p: any) => p.name === projectName)
-      if (!project) return
-      const workingDir = `${config.workspaceRoot}/${project.path}`
       message.loading({ content: `Removing worktree for ${projectName}...`, key: `remove-${projectName}`, duration: 0 })
-      const result = await window.nexworkAPI.runCommand(`git worktree remove "${worktreePath}"`, workingDir)
-      if (result.success) {
-        message.success({ content: `${projectName}: Worktree removed`, key: `remove-${projectName}`, duration: 3 })
-        setWorktreeInfo((prev) => ({ ...prev, [projectName]: null }))
-        await fetchGitStatus(projectName)
-      } else {
-        message.error({
-          content: errMsg(Err.WorktreeRemoveFailed, projectName, result.error ?? undefined),
-          key: `remove-${projectName}`,
-          duration: 5,
-        })
+
+      const result = await window.nexworkAPI.projects.removeWorktree(featureName, projectName)
+      if (!result?.success) {
+        throw new Error(result?.error || Err.WorktreeRemoveFailed)
       }
+
+      message.success({ content: `${projectName}: Worktree removed`, key: `remove-${projectName}`, duration: 3 })
+      setWorktreeInfo((prev) => ({ ...prev, [projectName]: null }))
+      await loadFeatureDetails(true)
+      await checkFeatureWorkspace()
+      await fetchGitStatus(projectName, { silent: true })
     } catch (error: any) {
-      message.error(errMsg(Err.WorktreeRemoveFailed, undefined, error.message))
+      message.error({
+        content: errMsg(Err.WorktreeRemoveFailed, projectName, error.message),
+        key: `remove-${projectName}`,
+        duration: 5,
+      })
     }
   }
 
@@ -1214,6 +1320,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     if (!feature) return
     const projectsWithWorktrees = feature.projects.filter((p) => p.worktreePath).map((p) => p.name)
     setSelectedProjectsForMerge(projectsWithWorktrees)
+    loadBranchesForProjects(projectsWithWorktrees)
+    setMergeTargetBranch(feature.projects.find((entry) => entry.worktreePath)?.baseBranch || 'staging')
     setMergeModalOpen(true)
   }
 
@@ -1274,19 +1382,72 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       message.warning(Err.SelectProject)
       return
     }
+    if (!mergeTargetBranch) {
+      message.warning('Select a target branch')
+      return
+    }
     try {
       message.loading({ content: 'Merging branches...', key: 'merge', duration: 0 })
       let successCount = 0
       let failedCount = 0
       const errors: string[] = []
+      const config = await window.nexworkAPI.config.load()
       for (const projectName of selectedProjectsForMerge) {
         const project = feature?.projects.find((p) => p.name === projectName)
-        if (!project?.worktreePath) continue
-        const baseBranch = project.baseBranch || 'staging'
+        const projectConfig = config.projects.find((p: any) => p.name === projectName)
+        if (!project || !projectConfig) continue
+        const mainRepoPath = `${config.workspaceRoot}/${projectConfig.path}`
+        const targetBranch = mergeTargetBranch
         try {
-          await window.nexworkAPI.runCommand(`git checkout ${baseBranch}`, project.worktreePath)
-          await window.nexworkAPI.runCommand(`git pull origin ${baseBranch}`, project.worktreePath)
-          const mergeResult = await window.nexworkAPI.runCommand(`git merge ${project.branch}`, project.worktreePath)
+          const dirtyResult = await window.nexworkAPI.runCommand('git status --porcelain', mainRepoPath)
+          if (!dirtyResult.success) {
+            throw new Error(dirtyResult.error || 'Failed to inspect repo status')
+          }
+          if (dirtyResult.output.trim()) {
+            throw new Error('Main repo has uncommitted changes. Commit or stash them before merging.')
+          }
+
+          const fetchResult = await window.nexworkAPI.runCommand('git fetch origin --prune', mainRepoPath)
+          if (!fetchResult.success) {
+            throw new Error(fetchResult.error || 'Failed to fetch latest remote refs')
+          }
+
+          const localTargetExists = await window.nexworkAPI.runCommand(
+            `git show-ref --verify --quiet refs/heads/${targetBranch}`,
+            mainRepoPath,
+          )
+          const remoteTargetExists = await window.nexworkAPI.runCommand(
+            `git show-ref --verify --quiet refs/remotes/origin/${targetBranch}`,
+            mainRepoPath,
+          )
+
+          let checkoutResult
+          if (localTargetExists.success) {
+            checkoutResult = await window.nexworkAPI.runCommand(`git checkout ${targetBranch}`, mainRepoPath)
+          } else if (remoteTargetExists.success) {
+            checkoutResult = await window.nexworkAPI.runCommand(
+              `git checkout -b ${targetBranch} --track origin/${targetBranch}`,
+              mainRepoPath,
+            )
+          } else {
+            checkoutResult = await window.nexworkAPI.runCommand(`git checkout -b ${targetBranch}`, mainRepoPath)
+          }
+
+          if (!checkoutResult.success) {
+            throw new Error(checkoutResult.error || `Failed to checkout ${targetBranch}`)
+          }
+
+          if (remoteTargetExists.success) {
+            const pullResult = await window.nexworkAPI.runCommand(
+              `git pull --ff-only origin ${targetBranch}`,
+              mainRepoPath,
+            )
+            if (!pullResult.success) {
+              throw new Error(pullResult.error || `Failed to pull latest ${targetBranch}`)
+            }
+          }
+
+          const mergeResult = await window.nexworkAPI.runCommand(`git merge ${project.branch}`, mainRepoPath)
           if (!mergeResult.success) {
             const mergeErr = mergeResult.error || ''
             if (
@@ -1294,11 +1455,11 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
               mergeErr.includes('Automatic merge failed') ||
               mergeResult.output?.includes('CONFLICT')
             ) {
-              const conflictResult = await window.nexworkAPI.git.getConflictFiles(project.worktreePath)
+              const conflictResult = await window.nexworkAPI.git.getConflictFiles(mainRepoPath)
               setConflictInfo({
                 projectName,
                 files: conflictResult.success ? conflictResult.files : [],
-                workingDir: project.worktreePath,
+                workingDir: mainRepoPath,
               })
               failedCount++
               errors.push(`${projectName}: Merge conflicts detected`)
@@ -1604,6 +1765,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     commitMessage,
     selectedProjectsForCommit,
     selectedProjectsForMerge,
+    mergeTargetBranch,
+    mergeAvailableBranches,
     conflictInfo,
     loadFeatureDetails,
     handleUpdateStatus,
@@ -1646,6 +1809,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     setCommitMessage,
     setSelectedProjectsForCommit,
     setSelectedProjectsForMerge,
+    setMergeTargetBranch,
     setPrModalOpen,
     setConflictInfo,
     featureName,
@@ -1760,22 +1924,29 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         </Space>
       </Modal>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-          gap: 16,
-          alignItems: 'start',
-          marginBottom: 16,
-        }}
-      >
+      <div style={{ marginBottom: 16 }}>
         <FeatureWorkspace ctx={ctx} />
-        <WorktreesList ctx={ctx} />
       </div>
 
-      {feature && <ChangesViewer featureName={featureName} projects={feature.projects} />}
-
-      {feature && <CommitTimeline featureName={featureName} projects={feature.projects} />}
+      {feature && (
+        <div style={{ marginBottom: 16 }}>
+          <Tabs
+            defaultActiveKey="changes"
+            items={[
+              {
+                key: 'changes',
+                label: 'Changes',
+                children: <ChangesViewer featureName={featureName} projects={feature.projects} />,
+              },
+              {
+                key: 'timeline',
+                label: 'Commit Timeline',
+                children: <CommitTimeline featureName={featureName} projects={feature.projects} />,
+              },
+            ]}
+          />
+        </div>
+      )}
 
       {workspaceRoot && (
         <div data-terminal-section style={{ marginTop: 8 }}>

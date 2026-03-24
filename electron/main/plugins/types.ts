@@ -32,6 +32,9 @@ export interface FeaturePluginRef {
   tracked?: boolean
   externalId?: string
   lastSyncAt?: string
+  lastSyncStatus?: 'success' | 'failed'
+  lastSyncEvent?: keyof PluginEventMap
+  lastSyncError?: string
   [key: string]: any
 }
 
@@ -44,6 +47,7 @@ export interface PluginEventMap {
   'feature.completed': {
     feature: any
     workspaceRoot: string
+    syncToMemstack?: boolean
   }
   'feature.deleted': {
     featureName: string
@@ -83,9 +87,9 @@ export interface MainPlugin extends PluginManifest {
   onProjectStatusUpdated?: (
     payload: PluginEventMap['project.status.updated'],
     context: PluginActionContext,
-  ) => Promise<void>
+  ) => Promise<PluginEventResult | void>
   onFeatureScopeUpdated?: (
     payload: PluginEventMap['feature.scope.updated'],
     context: PluginActionContext,
-  ) => Promise<void>
+  ) => Promise<PluginEventResult | void>
 }

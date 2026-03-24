@@ -22,6 +22,43 @@ import {
   terminalLimiter as _terminalLimiter,
 } from './security'
 
+function collectPluginRefs(pluginResults: Array<{ pluginId: string; result?: { pluginRef?: Record<string, any> } }>) {
+  return pluginResults.reduce(
+    (acc, entry) => {
+      if (entry.result?.pluginRef) {
+        acc[entry.pluginId] = entry.result.pluginRef
+      }
+      return acc
+    },
+    {} as Record<string, any>,
+  )
+}
+
+function applyPluginRefsToFeature(
+  configManager: any,
+  featureName: string,
+  pluginResults: Array<{ pluginId: string; result?: { pluginRef?: Record<string, any> } }>,
+) {
+  const pluginRefs = collectPluginRefs(pluginResults)
+
+  if (Object.keys(pluginRefs).length === 0) {
+    return configManager.getFeature(featureName)
+  }
+
+  const existingFeature = configManager.getFeature(featureName)
+  if (!existingFeature) {
+    return null
+  }
+
+  const mergedPluginRefs = {
+    ...(existingFeature.pluginRefs || {}),
+    ...pluginRefs,
+  }
+
+  configManager.updateFeature(featureName, { pluginRefs: mergedPluginRefs })
+  return configManager.getFeature(featureName)
+}
+
 // Import Nexwork CLI components - using require for CommonJS modules
 const { ConfigManager } = require('multi-repo-orchestrator/dist/core/config-manager.js')
 const { WorktreeManager } = require('multi-repo-orchestrator/dist/core/worktree-manager.js')
@@ -814,22 +851,10 @@ export function registerIpcHandlers() {
         workspaceRoot: currentWorkspaceRoot,
       })
 
-      const pluginRefs = pluginResults.reduce(
-        (acc, entry) => {
-          if (entry.result?.pluginRef) {
-            acc[entry.pluginId] = entry.result.pluginRef
-          }
-          return acc
-        },
-        {} as Record<string, any>,
-      )
-
-      if (Object.keys(pluginRefs).length > 0) {
-        newFeature.pluginRefs = {
-          ...(newFeature.pluginRefs || {}),
-          ...pluginRefs,
-        }
-        configManager.updateFeature(newFeature.name, { pluginRefs: newFeature.pluginRefs })
+      const updatedFeatureWithPluginRefs = applyPluginRefsToFeature(configManager, newFeature.name, pluginResults)
+      if (updatedFeatureWithPluginRefs) {
+        newFeature.pluginRefs = updatedFeatureWithPluginRefs.pluginRefs
+        newFeature.updatedAt = updatedFeatureWithPluginRefs.updatedAt
       }
 
       updateTrayWithFeatures()
@@ -967,15 +992,16 @@ export function registerIpcHandlers() {
 
         const updatedProjects = [...feature.projects, ...newProjects]
         configManager.updateFeature(featureName, { projects: updatedProjects })
-        const updatedFeature = configManager.getFeature(featureName)
+        let updatedFeature = configManager.getFeature(featureName)
 
         if (updatedFeature) {
-          await dispatchPluginEvent('feature.scope.updated', {
+          const pluginResults = await dispatchPluginEvent('feature.scope.updated', {
             feature: updatedFeature,
             featureName,
             addedProjects: projectsToAdd,
             workspaceRoot: currentWorkspaceRoot,
           })
+          updatedFeature = applyPluginRefsToFeature(configManager, featureName, pluginResults) || updatedFeature
         }
 
         return {
@@ -1052,50 +1078,56 @@ export function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('features:complete', async (_, name: string, _cleanup: boolean) => {
-    try {
-      requireWorkspace()
-      const configManager = getConfigManager()
-      const feature = configManager.getFeature(name)
+  ipcMain.handle(
+    'features:complete',
+    async (_, name: string, _cleanup: boolean, options?: { syncToMemstack?: boolean }) => {
+      try {
+        requireWorkspace()
+        const configManager = getConfigManager()
+        const feature = configManager.getFeature(name)
 
-      if (feature) {
-        try {
-          const { authStore } = await import('./auth-store')
-          const auth = authStore.get()
-          const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+        if (feature) {
+          try {
+            const { authStore } = await import('./auth-store')
+            const auth = authStore.get()
+            const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
 
-          if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
-            throw new Error('Cannot complete feature owned by a different account')
+            if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
+              throw new Error('Cannot complete feature owned by a different account')
+            }
+
+            if (!ownerAccountId && feature.ownerAccountId) {
+              throw new Error('Cannot complete feature owned by a specific account in local mode')
+            }
+          } catch (authError: any) {
+            if (authError?.message?.startsWith('Cannot complete feature')) {
+              throw authError
+            }
+            // Otherwise ignore authStore errors
           }
 
-          if (!ownerAccountId && feature.ownerAccountId) {
-            throw new Error('Cannot complete feature owned by a specific account in local mode')
-          }
-        } catch (authError: any) {
-          if (authError?.message?.startsWith('Cannot complete feature')) {
-            throw authError
-          }
-          // Otherwise ignore authStore errors
+          // Mark all projects as completed
+          feature.projects.forEach((project: any) => {
+            configManager.updateProjectStatus(name, project.name, 'completed')
+          })
+
+          const completedFeature = configManager.getFeature(name)
+          const pluginResults = await dispatchPluginEvent('feature.completed', {
+            feature: completedFeature,
+            workspaceRoot: currentWorkspaceRoot,
+            syncToMemstack: !!options?.syncToMemstack,
+          })
+          applyPluginRefsToFeature(configManager, name, pluginResults)
+
+          updateTrayWithFeatures()
+          notifyFeatureCompleted(feature.name)
         }
-
-        // Mark all projects as completed
-        feature.projects.forEach((project: any) => {
-          configManager.updateProjectStatus(name, project.name, 'completed')
-        })
-
-        await dispatchPluginEvent('feature.completed', {
-          feature,
-          workspaceRoot: currentWorkspaceRoot,
-        })
-
-        updateTrayWithFeatures()
-        notifyFeatureCompleted(feature.name)
+      } catch (error: any) {
+        log.error('Failed to complete feature:', error)
+        throw new Error(`Failed to complete feature: ${error.message}`)
       }
-    } catch (error: any) {
-      log.error('Failed to complete feature:', error)
-      throw new Error(`Failed to complete feature: ${error.message}`)
-    }
-  })
+    },
+  )
 
   // Clean up expired feature (delete worktrees, branches, and folder)
   ipcMain.handle('features:cleanupExpired', async (_, name: string) => {
@@ -1167,13 +1199,14 @@ export function registerIpcHandlers() {
 
       const feature = configManager.getFeature(featureName)
       if (feature) {
-        await dispatchPluginEvent('project.status.updated', {
+        const pluginResults = await dispatchPluginEvent('project.status.updated', {
           feature,
           featureName,
           projectName,
           status,
           workspaceRoot: currentWorkspaceRoot,
         })
+        applyPluginRefsToFeature(configManager, featureName, pluginResults)
         updateTrayWithFeatures()
         notifyProjectStatusChanged(feature.name, projectName, status)
       }

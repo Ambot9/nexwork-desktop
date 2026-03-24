@@ -1,5 +1,5 @@
 import { authStore } from '../../auth-store'
-import type { MainPlugin, PluginStatus } from '../types'
+import type { FeaturePluginRef, MainPlugin, PluginStatus } from '../types'
 
 function getMemstackStatus(config?: Record<string, any>): PluginStatus {
   const baseUrl = typeof config?.baseUrl === 'string' ? config.baseUrl.trim() : ''
@@ -90,6 +90,31 @@ async function postMemstackSync(config: Record<string, any> | undefined, payload
   }
 
   return response.json()
+}
+
+function buildSyncPluginRef(
+  payload: { feature?: any },
+  eventName: 'feature.created' | 'feature.completed' | 'project.status.updated' | 'feature.scope.updated',
+  options: {
+    status: 'success' | 'failed'
+    error?: unknown
+  },
+): FeaturePluginRef {
+  const existingRef = payload.feature?.pluginRefs?.memstack || {}
+
+  return {
+    tracked: existingRef.tracked ?? true,
+    externalId: existingRef.externalId || payload.feature?.name,
+    lastSyncAt: options.status === 'success' ? new Date().toISOString() : existingRef.lastSyncAt,
+    lastSyncStatus: options.status,
+    lastSyncEvent: eventName,
+    lastSyncError:
+      options.status === 'failed'
+        ? options.error instanceof Error
+          ? options.error.message
+          : String(options.error || 'Feature Memory sync failed')
+        : undefined,
+  }
 }
 
 async function listGithubRepos(token: string) {
@@ -269,48 +294,70 @@ export const memstackPlugin: MainPlugin = {
       return
     }
 
-    const result = await postMemstackSync(context.state.config, {
-      eventName: 'feature.created',
-      feature: payload.feature,
-      pluginData: {
-        memstack: memstackData,
-      },
-      workspaceRoot: payload.workspaceRoot,
-    })
+    try {
+      const result = await postMemstackSync(context.state.config, {
+        eventName: 'feature.created',
+        feature: payload.feature,
+        pluginData: {
+          memstack: memstackData,
+        },
+        workspaceRoot: payload.workspaceRoot,
+      })
 
-    return {
-      pluginRef: {
-        tracked: true,
-        externalId: result?.externalFeatureId || payload.feature.name,
-        lastSyncAt: new Date().toISOString(),
-        status: 'synced',
-      },
+      return {
+        pluginRef: {
+          ...buildSyncPluginRef(payload, 'feature.created', { status: 'success' }),
+          tracked: true,
+          externalId: result?.externalFeatureId || payload.feature.name,
+        },
+      }
+    } catch (error) {
+      return {
+        pluginRef: {
+          ...buildSyncPluginRef(payload, 'feature.created', { status: 'failed', error }),
+          tracked: true,
+        },
+      }
     }
   },
   onFeatureCompleted: async (payload, context) => {
-    await postMemstackSync(context.state.config, {
-      eventName: 'feature.completed',
-      feature: payload.feature,
-      workspaceRoot: payload.workspaceRoot,
-    })
-  },
-  onProjectStatusUpdated: async (payload, context) => {
-    await postMemstackSync(context.state.config, {
-      eventName: 'project.status.updated',
-      feature: payload.feature,
-      featureName: payload.featureName,
-      projectName: payload.projectName,
-      status: payload.status,
-      workspaceRoot: payload.workspaceRoot,
-    })
+    if (!payload.syncToMemstack) {
+      return
+    }
+
+    try {
+      await postMemstackSync(context.state.config, {
+        eventName: 'feature.completed',
+        feature: payload.feature,
+        workspaceRoot: payload.workspaceRoot,
+      })
+
+      return {
+        pluginRef: buildSyncPluginRef(payload, 'feature.completed', { status: 'success' }),
+      }
+    } catch (error) {
+      return {
+        pluginRef: buildSyncPluginRef(payload, 'feature.completed', { status: 'failed', error }),
+      }
+    }
   },
   onFeatureScopeUpdated: async (payload, context) => {
-    await postMemstackSync(context.state.config, {
-      eventName: 'feature.scope.updated',
-      feature: payload.feature,
-      featureName: payload.featureName,
-      addedProjects: payload.addedProjects,
-      workspaceRoot: payload.workspaceRoot,
-    })
+    try {
+      await postMemstackSync(context.state.config, {
+        eventName: 'feature.scope.updated',
+        feature: payload.feature,
+        featureName: payload.featureName,
+        addedProjects: payload.addedProjects,
+        workspaceRoot: payload.workspaceRoot,
+      })
+
+      return {
+        pluginRef: buildSyncPluginRef(payload, 'feature.scope.updated', { status: 'success' }),
+      }
+    } catch (error) {
+      return {
+        pluginRef: buildSyncPluginRef(payload, 'feature.scope.updated', { status: 'failed', error }),
+      }
+    }
   },
 }

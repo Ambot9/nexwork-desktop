@@ -1,5 +1,5 @@
-import { Card, Space, Typography, Button, List, Badge, Dropdown, Tag } from 'antd'
-import { FolderOpen, Terminal, Code, X, ChevronDown } from 'lucide-react'
+import { Card, Space, Typography, Button, List, Badge, Dropdown } from 'antd'
+import { FolderOpen, Terminal, Code, ChevronDown } from 'lucide-react'
 import type { FeatureDetailsContext } from './types'
 import { IDE_NAMES, TERMINAL_NAMES } from './types'
 
@@ -104,7 +104,7 @@ export function WorktreesList({ ctx }: Props) {
 
   return (
     <Card
-      bodyStyle={{ padding: '8px 20px 12px' }}
+      styles={{ body: { padding: '8px 20px 12px' } }}
       title={
         <Space size={8}>
           <FolderOpen size={16} />
@@ -129,7 +129,7 @@ export function WorktreesList({ ctx }: Props) {
       <List
         size="small"
         dataSource={activeWorktrees}
-        renderItem={([projectName, path]) => (
+        renderItem={([projectName, _path]) => (
           <List.Item style={{ padding: '14px 0' }}>
             <div style={{ width: '100%' }}>
               <div
@@ -147,9 +147,6 @@ export function WorktreesList({ ctx }: Props) {
                   <Text strong style={{ fontSize: 13 }}>
                     {projectName}
                   </Text>
-                  <Tag color="green" style={{ fontSize: 11, marginInlineEnd: 0 }}>
-                    Active
-                  </Tag>
                 </Space>
 
                 <Space size={4} wrap>
@@ -168,31 +165,8 @@ export function WorktreesList({ ctx }: Props) {
                       {getIDELabel(projectName, ctx)} <ChevronDown size={10} style={{ marginLeft: 2, opacity: 0.5 }} />
                     </Button>
                   </Dropdown>
-                  <Button
-                    key="remove"
-                    icon={<X size={13} />}
-                    onClick={() => ctx.handleRemoveWorktree(projectName)}
-                    size="small"
-                    type="text"
-                    danger
-                  />
                 </Space>
               </div>
-
-              <Text
-                type="secondary"
-                style={{
-                  fontSize: 11,
-                  display: 'block',
-                  paddingLeft: 24,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-                title={path || undefined}
-              >
-                {path}
-              </Text>
             </div>
           </List.Item>
         )}

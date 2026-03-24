@@ -8,12 +8,52 @@ interface Props {
   ctx: FeatureDetailsContext
 }
 
+const MEMSTACK_STALE_THRESHOLD_MS = 5000
+
+function getMemstackSyncSummary(feature: FeatureDetailsContext['feature']) {
+  const ref = feature?.pluginRefs?.memstack
+
+  if (!ref?.tracked) {
+    return null
+  }
+
+  if (ref.lastSyncStatus === 'failed') {
+    return {
+      color: 'error' as const,
+      label: 'Feature Memory Sync Failed',
+    }
+  }
+
+  if (!ref.lastSyncAt) {
+    return {
+      color: 'default' as const,
+      label: 'Feature Memory Not Synced',
+    }
+  }
+
+  const updatedAt = feature?.updatedAt ? new Date(feature.updatedAt).getTime() : 0
+  const lastSyncAt = new Date(ref.lastSyncAt).getTime()
+  const isOutOfDate =
+    Number.isFinite(updatedAt) && Number.isFinite(lastSyncAt) && updatedAt - lastSyncAt > MEMSTACK_STALE_THRESHOLD_MS
+
+  return isOutOfDate
+    ? {
+        color: 'warning' as const,
+        label: 'Feature Memory Out Of Date',
+      }
+    : {
+        color: 'success' as const,
+        label: 'Feature Memory Up To Date',
+      }
+}
+
 export function FeatureHeader({ ctx }: Props) {
   const { feature, stats, onBack } = ctx
   if (!feature) return null
 
   const progress = stats ? Math.round((stats.projectStatus.completed / stats.projectStatus.total) * 100) : 0
   const projectCount = feature.projects.length
+  const memstackSyncSummary = getMemstackSyncSummary(feature)
 
   const getProgressTag = () => {
     if (progress === 100) return <Tag color="success">Completed</Tag>
@@ -123,6 +163,11 @@ export function FeatureHeader({ ctx }: Props) {
           <Tag color="default" style={{ paddingInline: 10 }}>
             Created {new Date(feature.createdAt).toLocaleDateString()}
           </Tag>
+          {memstackSyncSummary && (
+            <Tag color={memstackSyncSummary.color} style={{ paddingInline: 10 }}>
+              {memstackSyncSummary.label}
+            </Tag>
+          )}
         </Space>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

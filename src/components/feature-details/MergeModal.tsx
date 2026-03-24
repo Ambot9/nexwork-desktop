@@ -13,10 +13,20 @@ export function MergeModal({ ctx }: Props) {
     feature,
     mergeModalOpen,
     selectedProjectsForMerge,
+    mergeTargetBranch,
+    mergeAvailableBranches,
     setMergeModalOpen,
     setSelectedProjectsForMerge,
+    setMergeTargetBranch,
     handleExecuteMerge,
   } = ctx
+
+  const sharedBranchOptions = Array.from(
+    new Set(selectedProjectsForMerge.flatMap((projectName) => mergeAvailableBranches[projectName] || [])),
+  ).map((branchName) => ({
+    label: branchName,
+    value: branchName,
+  }))
 
   return (
     <Modal
@@ -48,24 +58,38 @@ export function MergeModal({ ctx }: Props) {
               feature?.projects
                 .filter((p) => p.worktreePath)
                 .map((p) => ({
-                  label: `${p.name} (${p.branch} → ${(p as any).baseBranch || 'staging'})`,
+                  label: `${p.name} (${p.branch})`,
                   value: p.name,
                 })) || []
             }
           />
         </div>
 
+        <div>
+          <Text strong>Target Branch:</Text>
+          <Select
+            style={{ width: '100%', marginTop: 8 }}
+            value={mergeTargetBranch}
+            options={sharedBranchOptions}
+            onChange={setMergeTargetBranch}
+            placeholder="Select target branch"
+          />
+        </div>
+
         <Alert
-          message="Warning: This will merge feature branches"
+          message="Merge flow"
           description={
             <div>
               <p>For each selected project, this will:</p>
               <ul style={{ margin: '8px 0', paddingLeft: 20 }}>
-                <li>Checkout the base branch (staging/demo/main)</li>
-                <li>Pull latest changes from remote</li>
-                <li>Merge the feature branch into base branch</li>
+                <li>Fetch the latest remote refs</li>
+                <li>Checkout the same selected target branch for all chosen projects</li>
+                <li>Auto-pull the latest target branch code when remote exists</li>
+                <li>Merge each feature branch into that chosen target branch</li>
               </ul>
-              <p style={{ marginTop: 8, fontWeight: 600 }}>Make sure you've committed and pushed your changes first!</p>
+              <p style={{ marginTop: 8, fontWeight: 600 }}>
+                Uncommitted changes in the main repo will block merge preparation for that project.
+              </p>
             </div>
           }
           type="warning"

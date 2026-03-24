@@ -30,7 +30,8 @@ contextBridge.exposeInMainWorld('nexworkAPI', {
       ipcRenderer.invoke('features:addProjects', name, projectNames),
     update: (name: string, data: any) => ipcRenderer.invoke('features:update', name, data),
     delete: (name: string) => ipcRenderer.invoke('features:delete', name),
-    complete: (name: string, cleanup: boolean) => ipcRenderer.invoke('features:complete', name, cleanup),
+    complete: (name: string, cleanup: boolean, options?: { syncToMemstack?: boolean }) =>
+      ipcRenderer.invoke('features:complete', name, cleanup, options),
     cleanupExpired: (name: string) => ipcRenderer.invoke('features:cleanupExpired', name),
   },
 

@@ -13,6 +13,9 @@ export interface Feature {
       tracked?: boolean
       externalId?: string
       lastSyncAt?: string
+      lastSyncStatus?: 'success' | 'failed'
+      lastSyncEvent?: 'feature.created' | 'feature.completed' | 'project.status.updated' | 'feature.scope.updated'
+      lastSyncError?: string
       [key: string]: any
     }
   >

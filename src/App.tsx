@@ -18,6 +18,7 @@ import {
   Segmented,
   notification,
   Alert,
+  Checkbox,
 } from 'antd'
 import {
   FolderGit2,
@@ -46,6 +47,30 @@ import type { PluginDescriptor } from './plugins/types'
 
 const { Header, Content, Sider } = Layout
 const { Title, Text } = Typography
+
+const MEMSTACK_STALE_THRESHOLD_MS = 5000
+
+function getMemstackSyncState(
+  feature?: Feature | null,
+): 'not_tracked' | 'not_synced' | 'up_to_date' | 'out_of_date' | 'failed' {
+  const ref = feature?.pluginRefs?.memstack
+
+  if (!ref?.tracked) {
+    return 'not_tracked'
+  }
+
+  if (ref.lastSyncStatus === 'failed') {
+    return 'failed'
+  }
+
+  if (!ref.lastSyncAt) {
+    return 'not_synced'
+  }
+
+  const updatedAt = feature?.updatedAt ? new Date(feature.updatedAt).getTime() : 0
+  const lastSyncAt = new Date(ref.lastSyncAt).getTime()
+  return updatedAt - lastSyncAt > MEMSTACK_STALE_THRESHOLD_MS ? 'out_of_date' : 'up_to_date'
+}
 
 type View = 'dashboard' | 'feature-details' | 'settings' | 'activity' | 'git-auth' | 'workspace-health'
 
@@ -92,7 +117,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [_plugins, setPlugins] = useState<PluginDescriptor[]>([])
+  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
   const [authUser, setAuthUser] = useState('')
   const [authAvatar, setAuthAvatar] = useState('')
   const [_authProvider, setAuthProvider] = useState('')
@@ -378,14 +403,50 @@ function App() {
 
   const handleCompleteFeature = (featureName: string, event: React.MouseEvent) => {
     event.stopPropagation()
+    const feature = features.find((entry) => entry.name === featureName)
+    const memstackReady = plugins.some(
+      (plugin) => plugin.id === 'memstack' && plugin.enabled && plugin.status.state === 'ready',
+    )
+    let syncToMemstack = memstackReady && Boolean(feature?.pluginRefs?.memstack?.tracked)
+
     Modal.confirm({
       title: 'Complete Feature',
-      content: `Mark "${featureName}" as complete?`,
+      content: (
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Text>Mark "{featureName}" as complete?</Text>
+          {memstackReady && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '10px 12px',
+                border: '1px solid rgba(15, 23, 42, 0.08)',
+                borderRadius: 12,
+              }}
+            >
+              <div>
+                <Text strong>Sync to Feature Memory</Text>
+                <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                  Store the final completion state in MemStack when this feature is completed.
+                </Text>
+              </div>
+              <Checkbox
+                defaultChecked={syncToMemstack}
+                onChange={(checkedEvent) => {
+                  syncToMemstack = checkedEvent.target.checked
+                }}
+              />
+            </div>
+          )}
+        </Space>
+      ),
       okText: 'Complete',
       okType: 'primary',
       onOk: async () => {
         try {
-          await window.nexworkAPI.features.complete(featureName)
+          await window.nexworkAPI.features.complete(featureName, true, { syncToMemstack })
           message.success('Feature marked as complete')
           loadFeatures()
         } catch {
@@ -397,9 +458,21 @@ function App() {
 
   const handleDeleteFeature = (featureName: string, event: React.MouseEvent) => {
     event.stopPropagation()
+    const feature = features.find((entry) => entry.name === featureName)
+    const memstackSyncState = getMemstackSyncState(feature)
+
     Modal.confirm({
       title: 'Delete Feature',
-      content: `Delete "${featureName}"? This cannot be undone.`,
+      content:
+        memstackSyncState === 'not_tracked'
+          ? `Delete "${featureName}"? This cannot be undone.`
+          : memstackSyncState === 'up_to_date'
+            ? `Delete "${featureName}"? This removes the local feature, but Feature Memory data may still remain in MemStack or Git storage.`
+            : memstackSyncState === 'failed'
+              ? `Delete "${featureName}"? The latest Feature Memory sync failed, so shared memory may be incomplete or outdated.`
+              : memstackSyncState === 'out_of_date'
+                ? `Delete "${featureName}"? Feature Memory exists, but local changes appear newer than the last sync. Deleting now may remove context that has not been stored yet.`
+                : `Delete "${featureName}"? This feature is tracked for Feature Memory, but it does not appear to be synced yet. Deleting now may discard context that has not been stored in MemStack.`,
       okText: 'Delete',
       okType: 'danger',
       onOk: async () => {

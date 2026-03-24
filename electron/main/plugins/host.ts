@@ -174,15 +174,17 @@ export async function dispatchPluginEvent<K extends keyof PluginEventMap>(
       } else if (eventName === 'feature.deleted' && plugin.onFeatureDeleted) {
         await plugin.onFeatureDeleted(payload as PluginEventMap['feature.deleted'], { pluginId: plugin.id, state })
       } else if (eventName === 'project.status.updated' && plugin.onProjectStatusUpdated) {
-        await plugin.onProjectStatusUpdated(payload as PluginEventMap['project.status.updated'], {
-          pluginId: plugin.id,
-          state,
-        })
+        result =
+          (await plugin.onProjectStatusUpdated(payload as PluginEventMap['project.status.updated'], {
+            pluginId: plugin.id,
+            state,
+          })) || undefined
       } else if (eventName === 'feature.scope.updated' && plugin.onFeatureScopeUpdated) {
-        await plugin.onFeatureScopeUpdated(payload as PluginEventMap['feature.scope.updated'], {
-          pluginId: plugin.id,
-          state,
-        })
+        result =
+          (await plugin.onFeatureScopeUpdated(payload as PluginEventMap['feature.scope.updated'], {
+            pluginId: plugin.id,
+            state,
+          })) || undefined
       }
 
       results.push({ pluginId: plugin.id, result })

@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from 'react'
 import type { Feature, FeatureStats } from '../../types'
 
 export interface SavedCommand {
@@ -67,6 +68,8 @@ export interface FeatureDetailsContext {
   commitMessage: string
   selectedProjectsForCommit: string[]
   selectedProjectsForMerge: string[]
+  mergeTargetBranch: string
+  mergeAvailableBranches: Record<string, string[]>
 
   // Conflict state
   conflictInfo: ConflictInfo | null
@@ -115,6 +118,7 @@ export interface FeatureDetailsContext {
   setCommitMessage: (v: string) => void
   setSelectedProjectsForCommit: (v: string[]) => void
   setSelectedProjectsForMerge: (v: string[]) => void
+  setMergeTargetBranch: Dispatch<SetStateAction<string>>
   setPrModalOpen: (v: boolean) => void
   setConflictInfo: (v: ConflictInfo | null) => void
 
