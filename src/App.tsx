@@ -325,6 +325,11 @@ function App() {
       })
     }
 
+    const handleNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent<View>
+      if (customEvent.detail) setCurrentView(customEvent.detail)
+    }
+
     window.nexworkAPI.on('open-create-dialog', handleOpenCreate)
     window.nexworkAPI.on('open-settings', handleOpenSettings)
     window.nexworkAPI.on('app-update:available', handleUpdateAvailable)
@@ -332,6 +337,7 @@ function App() {
     window.nexworkAPI.on('app-update:download-progress', handleDownloadProgress)
     window.nexworkAPI.on('app-update:not-available', handleUpdateNotAvailable)
     window.nexworkAPI.on('app-update:error', handleUpdateError)
+    window.addEventListener('navigate', handleNavigate)
 
     return () => {
       window.nexworkAPI.off('open-create-dialog', handleOpenCreate)
@@ -341,6 +347,7 @@ function App() {
       window.nexworkAPI.off('app-update:download-progress', handleDownloadProgress)
       window.nexworkAPI.off('app-update:not-available', handleUpdateNotAvailable)
       window.nexworkAPI.off('app-update:error', handleUpdateError)
+      window.removeEventListener('navigate', handleNavigate)
     }
   }, [handleCreateFeature])
 

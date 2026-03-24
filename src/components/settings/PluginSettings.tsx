@@ -460,9 +460,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                         onClick={() => {
                           setRepoPickerPluginId(null)
                           setRepoPickerError(null)
-                          // Tell Settings layout to go to Git account page
-                          // The `Settings` layout responds to the URL or we can use an event
-                          window.location.hash = '#/settings/git'
+                          window.dispatchEvent(new CustomEvent('navigate', { detail: 'git-auth' }))
                         }}
                       >
                         Re-authenticate Git Account
