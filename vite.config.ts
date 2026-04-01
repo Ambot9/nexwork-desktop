@@ -41,7 +41,7 @@ export default defineConfig(({ command }) => {
               minify: isBuild,
               outDir: 'dist-electron/main',
               rollupOptions: {
-                external: ['node-pty', 'multi-repo-orchestrator', 'better-sqlite3', 'electron-store'],
+                external: ['node-pty', 'multi-repo-orchestrator', 'better-sqlite3', 'electron-store', 'simple-git'],
               },
             },
           },
