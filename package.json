@@ -95,7 +95,7 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
-      "artifactName": "${productName}_${version}_macOS.${ext}",
+      "artifactName": "${productName}_${version}_macOS-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
