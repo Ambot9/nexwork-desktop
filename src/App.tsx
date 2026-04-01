@@ -324,11 +324,20 @@ function App() {
         return
       }
 
+      let friendlyMessage =
+        'Unable to check for updates. You can manually download the latest version from our GitHub releases page.'
+      if (msg.includes('404') || msg.includes('not found')) {
+        friendlyMessage =
+          'Update server is temporarily unavailable. You can continue using your current version or download the latest from GitHub.'
+      } else if (msg.includes('network') || msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED')) {
+        friendlyMessage = 'No internet connection. Please check your network and try again.'
+      }
+
       notification.warning({
         key: 'app-update-error',
-        message: 'Update Check Failed',
-        description: payload?.message || 'Nexwork could not check for updates.',
-        duration: 5,
+        message: 'Update Check Unavailable',
+        description: friendlyMessage,
+        duration: 8,
       })
     }
 
