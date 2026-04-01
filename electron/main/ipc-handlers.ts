@@ -1224,6 +1224,17 @@ export function registerIpcHandlers() {
 
       // Get project path
       const projectPath = configManager.getProjectPath(projectName)
+
+      // Ensure git is initialized in the project folder
+      const gitDir = path.join(projectPath, '.git')
+      if (!fs.existsSync(gitDir)) {
+        log.info(`Git not initialized in ${projectPath}, running git init...`)
+        const { simpleGit } = await import('simple-git')
+        const git = simpleGit(projectPath)
+        await git.init()
+        log.info(`Git initialized in ${projectPath}`)
+      }
+
       const worktreeManager = new WorktreeManager(projectPath)
 
       // Create feature tracking directory

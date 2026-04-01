@@ -129,7 +129,7 @@ export function WorktreesList({ ctx }: Props) {
       <List
         size="small"
         dataSource={activeWorktrees}
-        renderItem={([projectName, _path]) => (
+        renderItem={([projectName, path]) => (
           <List.Item style={{ padding: '14px 0' }}>
             <div style={{ width: '100%' }}>
               <div
@@ -150,6 +150,15 @@ export function WorktreesList({ ctx }: Props) {
                 </Space>
 
                 <Space size={4} wrap>
+                  {path && (
+                    <Button
+                      icon={<Folder size={13} />}
+                      size="small"
+                      type="text"
+                      onClick={() => window.nexworkAPI.openInFinder(path)}
+                      title="Reveal in Finder"
+                    />
+                  )}
                   <Dropdown
                     key="terminal"
                     menu={{ items: buildTerminalMenuItems(projectName, ctx) }}
@@ -167,6 +176,11 @@ export function WorktreesList({ ctx }: Props) {
                   </Dropdown>
                 </Space>
               </div>
+              {path && (
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+                  {path}
+                </Text>
+              )}
             </div>
           </List.Item>
         )}
