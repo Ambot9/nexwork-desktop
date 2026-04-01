@@ -3,6 +3,7 @@ export interface Feature {
   projects: ProjectStatus[]
   createdAt: string
   updatedAt: string
+  featureFolderPath?: string
   startedAt?: string
   completedAt?: string
   expiresAt?: string

@@ -152,7 +152,7 @@ export function WorktreesList({ ctx }: Props) {
                 <Space size={4} wrap>
                   {path && (
                     <Button
-                      icon={<Folder size={13} />}
+                      icon={<FolderOpen size={13} />}
                       size="small"
                       type="text"
                       onClick={() => window.nexworkAPI.openInFinder(path)}

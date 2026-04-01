@@ -163,37 +163,37 @@ export const COMMON_COMMANDS = [
 
 export enum Err {
   // Feature operations
-  LoadFailed = 'Could not load feature',
-  StatusUpdateFailed = 'Could not update status',
-  CompleteFailed = 'Could not complete feature',
-  DeleteFailed = 'Could not delete feature',
-  RefreshFailed = 'Could not refresh',
+  LoadFailed = 'Could not load this feature',
+  StatusUpdateFailed = 'Could not save status',
+  CompleteFailed = 'Could not complete this feature',
+  DeleteFailed = 'Could not delete this feature',
+  RefreshFailed = 'Refresh failed',
   SyncFailed = 'Could not sync worktrees',
   CleanupFailed = 'Cleanup failed',
-  ExpirationFailed = 'Could not update expiration',
+  ExpirationFailed = 'Could not update the date',
 
   // Worktree operations
-  WorktreeCreateFailed = 'Could not create worktree',
-  WorktreeRemoveFailed = 'Could not remove worktree',
-  WorktreeNotFound = 'No worktree for this project',
+  WorktreeCreateFailed = 'Could not create the worktree',
+  WorktreeRemoveFailed = 'Could not remove the worktree',
+  WorktreeNotFound = 'No worktree yet',
 
   // Command execution
   CommandFailed = 'Command failed',
-  CommandEmpty = 'Enter a command first',
+  CommandEmpty = 'Enter a command',
 
   // Git status & fetch
-  Offline = 'Offline — cannot reach remote',
-  StatusFailed = 'Could not get git status',
+  Offline = 'Remote is not reachable',
+  StatusFailed = 'Could not check git status',
 
   // Git pull errors
-  PullConflict = 'Merge conflicts — resolve before continuing',
-  PullNoRemote = 'No remote branch yet — push first',
-  PullDirty = 'Uncommitted changes — commit or stash first',
-  PullAuthFailed = 'Auth failed — check your git credentials',
+  PullConflict = 'Merge conflict — fix it first',
+  PullNoRemote = 'No remote branch yet',
+  PullDirty = 'Commit or stash changes first',
+  PullAuthFailed = 'Check your git access',
   PullFailed = 'Pull failed',
 
   // Git push errors
-  PushAuthFailed = 'Push auth failed — check your git credentials',
+  PushAuthFailed = 'Could not push — check git access',
   PushFailed = 'Push failed',
 
   // Batch operations
@@ -202,12 +202,12 @@ export enum Err {
   PullAllFailed = 'Pull all failed',
 
   // Conflict resolution
-  AbortFailed = 'Could not abort merge',
-  ResolveFailed = 'Could not stage resolved files',
+  AbortFailed = 'Could not stop the merge',
+  ResolveFailed = 'Could not stage the resolved files',
 
   // IDE / Terminal
-  TerminalFailed = 'Could not open terminal',
-  IDEFailed = 'Could not open IDE',
+  TerminalFailed = 'Could not open the terminal',
+  IDEFailed = 'Could not open the IDE',
 
   // Validation
   SelectProject = 'Select at least one project',

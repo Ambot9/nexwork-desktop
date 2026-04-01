@@ -316,14 +316,41 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         window.nexworkAPI.features.getByName(featureName),
         window.nexworkAPI.config.load(),
       ])
-      const featureFolderName = featureData.name.replace(/_/g, '-')
-      const featureFolderPattern = `${config.workspaceRoot}/features/*${featureFolderName}*`
-      const folderResult = await window.nexworkAPI.runCommand(
-        `ls -d ${featureFolderPattern} 2>/dev/null || echo ""`,
-        config.workspaceRoot,
-      )
-      if (folderResult.success && folderResult.output.trim()) {
-        const detectedPath = folderResult.output.trim().split('\n')[0]
+      const savedFeatureFolderPath = featureData.featureFolderPath?.trim()
+      let detectedPath = ''
+
+      if (savedFeatureFolderPath) {
+        const savedPathResult = await window.nexworkAPI.runCommand(
+          `test -d "${savedFeatureFolderPath}" && echo "exists" || echo "missing"`,
+          config.workspaceRoot,
+        )
+
+        if (savedPathResult.success && savedPathResult.output.trim() === 'exists') {
+          detectedPath = savedFeatureFolderPath
+        }
+      }
+
+      if (!detectedPath) {
+        const featureFolderName = featureData.name.replace(/_/g, '-')
+        const featureFolderPattern = `${config.workspaceRoot}/features/*${featureFolderName}*`
+        const folderResult = await window.nexworkAPI.runCommand(
+          `ls -d ${featureFolderPattern} 2>/dev/null || echo ""`,
+          config.workspaceRoot,
+        )
+
+        if (folderResult.success && folderResult.output.trim()) {
+          detectedPath = folderResult.output.trim().split('\n')[0]
+          if (detectedPath && detectedPath !== savedFeatureFolderPath) {
+            try {
+              await window.nexworkAPI.features.update(featureData.name, { featureFolderPath: detectedPath })
+            } catch {
+              // ignore path backfill errors
+            }
+          }
+        }
+      }
+
+      if (detectedPath) {
         setFeatureFolderPath(detectedPath)
         const status: Record<string, WorktreeStatus> = {}
         for (const project of featureData.projects) {
@@ -403,7 +430,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const handleUpdateStatus = async (projectName: string, newStatus: string) => {
     try {
       await window.nexworkAPI.projects.updateStatus(featureName, projectName, newStatus)
-      message.success(`Updated ${projectName} status to ${newStatus}`)
+      message.success(`${projectName} updated`)
       loadFeatureDetails()
     } catch {
       message.error(Err.StatusUpdateFailed)
@@ -420,7 +447,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     )
 
     Modal.confirm({
-      title: 'Complete Feature?',
+      title: 'Complete feature?',
       content: (
         <Space direction="vertical">
           <Text>This will mark the following as completed:</Text>
@@ -469,7 +496,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         try {
           message.loading({ content: 'Completing feature...', key: 'complete-feature', duration: 0 })
           await window.nexworkAPI.features.complete(featureName, true)
-          message.success({ content: 'Feature completed successfully!', key: 'complete-feature', duration: 3 })
+          message.success({ content: 'Feature completed', key: 'complete-feature', duration: 3 })
           onBack()
         } catch (error: any) {
           message.error({
@@ -488,7 +515,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     const memstackSyncState = getMemstackSyncState(feature)
 
     Modal.confirm({
-      title: 'Delete Feature?',
+      title: 'Delete feature?',
       content: (
         <Space direction="vertical">
           <Text>This will permanently delete:</Text>
@@ -511,7 +538,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
               <Alert
                 type="warning"
                 showIcon
-                message="Feature Memory may still remain in shared storage"
+                message="Feature Memory may still exist"
                 description="Deleting this feature removes the local Nexwork record only. Previously synced MemStack data may still exist in the storage repo or MemStack service."
               />
             ) : memstackSyncState === 'failed' ? (
@@ -537,7 +564,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
               />
             )
           ) : (
-            <Text type="danger">This action cannot be undone!</Text>
+            <Text type="danger">This cannot be undone.</Text>
           )}
         </Space>
       ),
@@ -548,7 +575,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         try {
           message.loading({ content: 'Deleting feature...', key: 'delete-feature', duration: 0 })
           await window.nexworkAPI.features.delete(featureName)
-          message.success({ content: 'Feature deleted successfully!', key: 'delete-feature', duration: 3 })
+          message.success({ content: 'Feature deleted', key: 'delete-feature', duration: 3 })
           onBack()
         } catch (error: any) {
           message.error({
@@ -565,7 +592,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     try {
       setRefreshing(true)
       await loadFeatureDetails()
-      message.success('Feature details refreshed!')
+      message.success('Refreshed')
     } catch {
       message.error(Err.RefreshFailed)
     } finally {
@@ -578,7 +605,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       message.loading({ content: 'Syncing worktree paths...', key: 'sync' })
       await window.nexworkAPI.stats.syncWorktrees(featureName)
       await loadFeatureDetails()
-      message.success({ content: 'Worktree paths synced successfully!', key: 'sync', duration: 3 })
+      message.success({ content: 'Worktrees synced', key: 'sync', duration: 3 })
     } catch {
       message.error({ content: Err.SyncFailed, key: 'sync', duration: 3 })
     }
@@ -587,7 +614,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const handleCleanupExpired = () => {
     if (!feature) return
     Modal.confirm({
-      title: 'Clean Up Expired Feature',
+      title: 'Clean up expired feature',
       content: (
         <Space direction="vertical" style={{ width: '100%' }}>
           <Text strong>This will permanently delete:</Text>
@@ -598,7 +625,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
             <li>Feature from the config</li>
           </ul>
           <Text type="danger" strong>
-            This action cannot be undone!
+            This cannot be undone.
           </Text>
         </Space>
       ),
@@ -654,7 +681,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         }
         try {
           await window.nexworkAPI.features.update(featureName, { expiresAt: newExpirationDate.toISOString() })
-          message.success('Expiration date updated successfully!')
+          message.success('Date updated')
           await loadFeatureDetails(true)
         } catch (error: any) {
           message.error(errMsg(Err.ExpirationFailed, undefined, error.message))
@@ -703,7 +730,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           setWorktreeInfo((prev) => ({ ...prev, [projectName]: result.path }))
         }
         message.success({
-          content: `${projectName}: Worktree created! Branch is local only - Push when ready.`,
+          content: `${projectName}: Worktree ready. Push when ready.`,
           key: `worktree-${projectName}`,
           duration: 3,
         })
@@ -737,9 +764,9 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const addedProjects = result?.addedProjects || []
 
       if (addedProjects.length > 0) {
-        message.success(`Added required project(s): ${addedProjects.join(', ')}`)
+        message.success(`Added: ${addedProjects.join(', ')}`)
       } else {
-        message.info('All required projects are already included')
+        message.info('Nothing to add')
       }
 
       await loadFeatureDetails(true)
@@ -759,7 +786,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     const selectableProjects = availableProjects.filter((projectName) => !existingProjects.has(projectName))
 
     if (selectableProjects.length === 0) {
-      message.info('All available projects are already part of this feature')
+      message.info('No projects left to add')
       return
     }
     setAddProjectSelections([])
@@ -796,7 +823,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       if (addedProjects.length > 0) {
         message.success(`Added projects: ${addedProjects.join(', ')}`)
       } else {
-        message.info('No new projects were added')
+        message.info('Nothing changed')
       }
 
       setAddProjectsModalOpen(false)
@@ -817,14 +844,14 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         message.warning(Err.WorktreeNotFound)
         return
       }
-      message.loading({ content: `Removing worktree for ${projectName}...`, key: `remove-${projectName}`, duration: 0 })
+      message.loading({ content: `Removing ${projectName}...`, key: `remove-${projectName}`, duration: 0 })
 
       const result = await window.nexworkAPI.projects.removeWorktree(featureName, projectName)
       if (!result?.success) {
         throw new Error(result?.error || Err.WorktreeRemoveFailed)
       }
 
-      message.success({ content: `${projectName}: Worktree removed`, key: `remove-${projectName}`, duration: 3 })
+      message.success({ content: `${projectName}: Removed`, key: `remove-${projectName}`, duration: 3 })
       setWorktreeInfo((prev) => ({ ...prev, [projectName]: null }))
       await loadFeatureDetails(true)
       await checkFeatureWorkspace()
@@ -873,8 +900,8 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       }
       const result = await window.nexworkAPI.runCommand(command, workingDir)
       if (result.success) {
-        setCommandOutput(result.output || 'Command completed successfully (no output)')
-        message.success('Command executed successfully')
+        setCommandOutput(result.output || 'Done.')
+        message.success('Done')
       } else {
         setCommandError(result.error || Err.CommandFailed)
         setCommandOutput(result.output)
@@ -944,7 +971,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         if (!silent) {
           if (isPermission) {
             message.error({
-              content: `${projectName}: Remote unavailable (not found or no permission)`,
+              content: `${projectName}: Remote unavailable`,
               key: projectName,
               duration: 3,
             })
@@ -1019,9 +1046,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           errorText.includes('could not read from remote repository')
         if (!silent) {
           message.error({
-            content: isPermission
-              ? `${projectName}: Remote unavailable (not found or no permission)`
-              : `${projectName}: Failed to reach remote`,
+            content: isPermission ? `${projectName}: Remote unavailable` : `${projectName}: Failed to reach remote`,
             key: `pull-${projectName}`,
             duration: 3,
           })
@@ -1032,7 +1057,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const result = await window.nexworkAPI.runCommand('git pull --no-edit', workingDir)
       if (result.success) {
         if (!silent) {
-          message.success({ content: `${projectName}: Pulled successfully`, key: `pull-${projectName}`, duration: 3 })
+          message.success({ content: `${projectName}: Pulled`, key: `pull-${projectName}`, duration: 3 })
         }
         await fetchGitStatus(projectName, { silent })
       } else {
@@ -1124,7 +1149,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         if (currentBranch) {
           if (!silent) {
             message.info({
-              content: `${projectName}: Creating remote branch and pushing...`,
+              content: `${projectName}: Creating remote branch...`,
               key: `push-${projectName}`,
               duration: 0,
             })
@@ -1138,7 +1163,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       if (result.success) {
         if (!silent) {
           message.success({
-            content: `${projectName}: Pushed to remote!`,
+            content: `${projectName}: Pushed`,
             key: `push-${projectName}`,
             duration: 3,
           })
@@ -1210,7 +1235,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       if (createResult.success) {
         if (!silent) {
           message.success({
-            content: `${projectName}: Worktree created successfully!`,
+            content: `${projectName}: Worktree ready`,
             key: `worktree-${projectName}`,
             duration: 3,
           })
@@ -1220,7 +1245,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       } else {
         if (!silent) {
           message.error({
-            content: `${projectName}: Failed to create worktree - ${createResult.error?.substring(0, 100)}`,
+            content: `${projectName}: Could not create the worktree`,
             key: `worktree-${projectName}`,
             duration: 5,
           })
@@ -1238,7 +1263,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const handleCleanupWorktrees = () => {
     if (!feature) return
     Modal.confirm({
-      title: 'Cleanup Prunable Worktrees',
+      title: 'Clean up stale worktrees',
       content: 'This will run "git worktree prune" on all projects to remove stale worktree references. Continue?',
       okText: 'Yes, Cleanup',
       okType: 'primary',
@@ -1262,9 +1287,9 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         }
         message.destroy('cleanup-worktrees')
         if (failedCount > 0) {
-          message.warning(`Cleanup completed: ${successCount} succeeded, ${failedCount} failed`, 5)
+          message.warning(`${successCount} cleaned, ${failedCount} failed`, 5)
         } else {
-          message.success(`All projects cleaned up! ${successCount} project(s) processed`, 3)
+          message.success(`${successCount} project(s) cleaned`, 3)
         }
         await loadFeatureDetails(true)
       },
@@ -1319,7 +1344,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       message.destroy('commit')
       if (failedCount > 0) {
         Modal.error({
-          title: 'Commit Completed with Errors',
+          title: 'Commit finished with issues',
           content: (
             <div>
               <p>{successCount} project(s) committed successfully</p>
@@ -1333,7 +1358,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           ),
         })
       } else {
-        message.success(`Committed changes in ${successCount} project(s)!`)
+        message.success(`Committed ${successCount} project(s)`)
       }
       setCommitModalOpen(false)
       await loadFeatureDetails(true)
@@ -1443,7 +1468,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       message.destroy('merge')
       if (failedCount > 0) {
         Modal.error({
-          title: 'Merge Completed with Errors',
+          title: 'Merge finished with issues',
           content: (
             <div>
               <p>{successCount} project(s) merged successfully</p>
@@ -1457,7 +1482,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           ),
         })
       } else {
-        message.success(`Merged ${successCount} project(s) successfully!`)
+        message.success(`Merged ${successCount} project(s)`)
       }
       setMergeModalOpen(false)
       await loadFeatureDetails(true)
@@ -1470,7 +1495,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     if (!conflictInfo) return
     try {
       await window.nexworkAPI.runCommand('git merge --abort', conflictInfo.workingDir)
-      message.success(`${conflictInfo.projectName}: Merge aborted`)
+      message.success(`${conflictInfo.projectName}: Merge stopped`)
       setConflictInfo(null)
       await fetchAllGitStatuses()
     } catch (error: any) {
@@ -1482,7 +1507,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     if (!conflictInfo) return
     try {
       await window.nexworkAPI.runCommand('git add .', conflictInfo.workingDir)
-      message.success(`${conflictInfo.projectName}: Conflicts marked as resolved. Use the Commit modal to commit.`)
+      message.success(`${conflictInfo.projectName}: Conflicts staged`)
       setConflictInfo(null)
       await fetchAllGitStatuses()
     } catch (error: any) {
@@ -1509,7 +1534,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       let failedCount = 0
       if (projectsWithoutWorktrees.length > 0) {
         message.loading({
-          content: `Creating worktrees for ${projectsWithoutWorktrees.length} project(s)...`,
+          content: `Creating ${projectsWithoutWorktrees.length} worktree(s)...`,
           key: 'pull-all',
           duration: 0,
         })
@@ -1531,7 +1556,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       }
       if (projectsWithWorktrees.length > 0) {
         message.loading({
-          content: `Checking remote tracking for ${projectsWithWorktrees.length} project(s)...`,
+          content: `Checking ${projectsWithWorktrees.length} project(s)...`,
           key: 'pull-all',
           duration: 0,
         })
@@ -1571,17 +1596,17 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const summary = parts.join(', ')
       const localOnlyCount = projectsWithWorktrees.length - pulledCount - failedCount
       if (failedCount > 0) {
-        message.error(`Failed to pull: ${failedProjects.join(', ')}`, 5)
+        message.error(`Pull failed: ${failedProjects.join(', ')}`, 5)
       } else if (createdCount > 0 && pulledCount === 0) {
-        message.success(`${createdCount} worktree(s) created! Branches are local only - push when ready.`, 5)
+        message.success(`${createdCount} worktree(s) ready. Push when ready.`, 5)
       } else if (localOnlyCount > 0) {
         if (summary) {
-          message.success(`${summary}. ${localOnlyCount} branch(es) are local only - push when ready.`, 5)
+          message.success(`${summary}. ${localOnlyCount} local-only branch(es).`, 5)
         } else {
-          message.success(`${localOnlyCount} branch(es) are local only - push when ready.`, 5)
+          message.success(`${localOnlyCount} local-only branch(es).`, 5)
         }
       } else {
-        message.success('Successfully pulled all projects.', 3)
+        message.success('All projects pulled', 3)
       }
     } catch (error: any) {
       message.error(errMsg(Err.PullAllFailed, undefined, error.message))
@@ -1607,7 +1632,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       if (failedProjects.length > 0) {
         message.error(`Failed to push: ${failedProjects.join(', ')}`, 5)
       } else {
-        message.success('Successfully pushed all projects.', 3)
+        message.success('All projects pushed', 3)
       }
     } catch (error: any) {
       message.destroy('push-all')
@@ -1625,7 +1650,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
       const terminalSection = document.querySelector('[data-terminal-section]')
       if (terminalSection) {
         terminalSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        message.info(`Use the Integrated Terminal section below for ${projectName}`)
+        message.info(`Use the terminal below for ${projectName}`)
       }
     }
   }
@@ -1638,21 +1663,13 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         return
       }
       const appToUse = terminalApp || projectTerminalAppPreferences[projectName] || 'terminal'
-      const terminalNames: Record<string, string> = {
-        terminal: 'Terminal',
-        iterm2: 'iTerm2',
-        warp: 'Warp',
-        alacritty: 'Alacritty',
-        kitty: 'Kitty',
-        hyper: 'Hyper',
-      }
       if (terminalApp) {
         const newPreferences = { ...projectTerminalAppPreferences, [projectName]: terminalApp }
         setProjectTerminalAppPreferences(newPreferences)
         localStorage.setItem('projectTerminalAppPreferences', JSON.stringify(newPreferences))
       }
       const result = await window.nexworkAPI.openInTerminal(worktreePath, appToUse)
-      if (result.success) message.success(`Opening ${projectName} in ${terminalNames[appToUse]}`)
+      if (result.success) message.success(`Opening ${projectName}`)
       else message.error(errMsg(Err.TerminalFailed, projectName, result.error))
     } catch (error: any) {
       message.error(errMsg(Err.TerminalFailed, projectName, error.message))
@@ -1667,21 +1684,13 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
         return
       }
       const ideToUse = ide || projectIDEPreferences[projectName] || preferredIDE
-      const ideNames: Record<string, string> = {
-        vscode: 'VS Code',
-        cursor: 'Cursor',
-        rider: 'Rider',
-        webstorm: 'WebStorm',
-        intellij: 'IntelliJ IDEA',
-        'code-insiders': 'VS Code Insiders',
-      }
       if (ide) {
         const newPreferences = { ...projectIDEPreferences, [projectName]: ide }
         setProjectIDEPreferences(newPreferences)
         localStorage.setItem('projectIDEPreferences', JSON.stringify(newPreferences))
       }
       const result = await window.nexworkAPI.openInIDE(worktreePath, ideToUse)
-      if (result.success) message.success(`Opening ${projectName} in ${ideNames[ideToUse]}`)
+      if (result.success) message.success(`Opening ${projectName}`)
       else message.error(errMsg(Err.IDEFailed, projectName, result.error))
     } catch (error: any) {
       message.error(errMsg(Err.IDEFailed, projectName, error.message))

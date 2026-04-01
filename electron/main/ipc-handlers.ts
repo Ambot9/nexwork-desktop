@@ -784,12 +784,20 @@ export function registerIpcHandlers() {
         }
       })
 
+      // Create feature folder
+      const today = new Date()
+      const dateStr = today.toISOString().split('T')[0]
+      const featureFolderName = `${dateStr}-${data.name.replace(/[^a-zA-Z0-9]/g, '-')}`
+      const featuresDir = path.join(currentWorkspaceRoot, 'features')
+      const featureTrackingDir = path.join(featuresDir, featureFolderName)
+
       // Create feature object (no ID, just name)
       const newFeature: any = {
         name: data.name,
         projects: projectStatuses,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        featureFolderPath: featureTrackingDir,
         ...(data.expiresAt && { expiresAt: data.expiresAt }),
       }
 
@@ -806,13 +814,6 @@ export function registerIpcHandlers() {
 
       // Add feature to config
       configManager.addFeature(newFeature)
-
-      // Create feature folder
-      const today = new Date()
-      const dateStr = today.toISOString().split('T')[0]
-      const featureFolderName = `${dateStr}-${data.name.replace(/[^a-zA-Z0-9]/g, '-')}`
-      const featuresDir = path.join(currentWorkspaceRoot, 'features')
-      const featureTrackingDir = path.join(featuresDir, featureFolderName)
 
       const fs = require('fs')
       if (!fs.existsSync(featuresDir)) {
@@ -1229,7 +1230,8 @@ export function registerIpcHandlers() {
       const gitDir = path.join(projectPath, '.git')
       if (!fs.existsSync(gitDir)) {
         log.info(`Git not initialized in ${projectPath}, running git init...`)
-        const { simpleGit } = await import('simple-git')
+        // Use runtime require here because desktop consumes the linked package tree.
+        const { simpleGit } = require('simple-git')
         const git = simpleGit(projectPath)
         await git.init()
         log.info(`Git initialized in ${projectPath}`)
@@ -1521,6 +1523,9 @@ export function registerIpcHandlers() {
         if (!fs.existsSync(configPath)) {
           log.info('Initializing config for new workspace...')
           await configManager.initialize()
+        } else if (typeof configManager.refreshProjectLocations === 'function') {
+          log.info('Refreshing project discovery for workspace...')
+          await configManager.refreshProjectLocations()
         }
 
         log.info('Projects discovered for workspace:', currentWorkspaceRoot)

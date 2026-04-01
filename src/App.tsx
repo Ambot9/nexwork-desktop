@@ -243,13 +243,13 @@ function App() {
     try {
       const config = await window.nexworkAPI.config.load()
       if (!config?.workspaceRoot) {
-        message.warning('Please select a workspace in Settings before creating a feature.')
+        message.warning('Pick a workspace first.')
         setCurrentView('settings')
         return
       }
       setCreateModalOpen(true)
     } catch {
-      message.warning('Please select a workspace in Settings before creating a feature.')
+      message.warning('Pick a workspace first.')
       setCurrentView('settings')
     }
   }, [])
@@ -264,10 +264,10 @@ function App() {
       })
       notification.info({
         key: 'app-update-available',
-        message: 'Update Available',
+        message: 'Update available',
         description: payload?.version
-          ? `Nexwork ${payload.version} is available. The update is downloading in the background.`
-          : 'A new version of Nexwork is available. The update is downloading in the background.',
+          ? `Nexwork ${payload.version} is downloading in the background.`
+          : 'A new Nexwork update is downloading in the background.',
         duration: 6,
       })
     }
@@ -279,10 +279,10 @@ function App() {
       })
       notification.success({
         key: 'app-update-downloaded',
-        message: 'Update Ready',
+        message: 'Update ready',
         description: payload?.version
-          ? `Nexwork ${payload.version} has been downloaded. Restart to install the update.`
-          : 'A new version has been downloaded. Restart to install the update.',
+          ? `Nexwork ${payload.version} is ready. Restart to install it.`
+          : 'The update is ready. Restart to install it.',
         duration: 0,
         btn: (
           <Button
@@ -290,7 +290,7 @@ function App() {
             size="small"
             onClick={() => {
               window.nexworkAPI.system.restartAndInstallUpdate().catch(() => {
-                message.error('Failed to restart and install update')
+                message.error('Could not restart the app')
               })
             }}
           >
@@ -470,10 +470,10 @@ function App() {
       onOk: async () => {
         try {
           await window.nexworkAPI.features.complete(featureName, true, { syncToMemstack })
-          message.success('Feature marked as complete')
+          message.success('Feature completed')
           loadFeatures()
         } catch {
-          message.error('Failed to complete feature')
+          message.error('Could not complete the feature')
         }
       },
     })
@@ -504,7 +504,7 @@ function App() {
           message.success('Feature deleted')
           loadFeatures()
         } catch {
-          message.error('Failed to delete feature')
+          message.error('Could not delete the feature')
         }
       },
     })

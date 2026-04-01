@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Space, Typography, message, Row, Col, Card, Tag, Statistic } from 'antd'
-import { Blocks, Palette, FolderTree, Puzzle, Sparkles, BellRing, FileText, Info } from 'lucide-react'
+import { Blocks, Palette, FolderTree, Puzzle, Sparkles, FileText, Info } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { WorkspaceSettings } from '../components/settings/WorkspaceSettings'
 import { WorkspaceProjectsSettings } from '../components/settings/WorkspaceProjectsSettings'
 import { AppearanceSettings } from '../components/settings/AppearanceSettings'
 import { PreferencesSettings } from '../components/settings/PreferencesSettings'
-import { NotificationSettings } from '../components/settings/NotificationSettings'
 import { TemplateSettings } from '../components/settings/TemplateSettings'
 import { PluginSettings } from '../components/settings/PluginSettings'
 import type { Config } from '../types'
@@ -19,8 +18,6 @@ export function Settings() {
   const [availableTemplates, setAvailableTemplates] = useState<string[]>([])
   const [aiEnabled, setAiEnabled] = useState(false)
   const { theme: selectedTheme, setTheme: setSelectedTheme, isDark } = useTheme()
-  const [notificationSoundsEnabled, setNotificationSoundsEnabled] = useState(true)
-  const [selectedSound, setSelectedSound] = useState('codeComplete')
   const [startOnStartup, setStartOnStartup] = useState(false)
   const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
 
@@ -45,31 +42,17 @@ export function Settings() {
       setPlugins(pluginData)
 
       try {
-        const [
-          notifEnabledRes,
-          soundRes,
-          aiEnabledRes,
-          aiProviderRes,
-          aiApiKeyRes,
-          aiModelRes,
-          templateRes,
-          searchPathsRes,
-          excludeRes,
-        ] = await Promise.all([
-          window.nexworkAPI.settings.get('notificationSoundsEnabled'),
-          window.nexworkAPI.settings.get('notificationSound'),
-          window.nexworkAPI.settings.get('aiEnabled'),
-          window.nexworkAPI.settings.get('aiProvider'),
-          window.nexworkAPI.settings.get('aiApiKey'),
-          window.nexworkAPI.settings.get('aiModel'),
-          window.nexworkAPI.settings.get('defaultTemplate'),
-          window.nexworkAPI.settings.get('searchPaths'),
-          window.nexworkAPI.settings.get('exclude'),
-        ])
+        const [aiEnabledRes, aiProviderRes, aiApiKeyRes, aiModelRes, templateRes, searchPathsRes, excludeRes] =
+          await Promise.all([
+            window.nexworkAPI.settings.get('aiEnabled'),
+            window.nexworkAPI.settings.get('aiProvider'),
+            window.nexworkAPI.settings.get('aiApiKey'),
+            window.nexworkAPI.settings.get('aiModel'),
+            window.nexworkAPI.settings.get('defaultTemplate'),
+            window.nexworkAPI.settings.get('searchPaths'),
+            window.nexworkAPI.settings.get('exclude'),
+          ])
 
-        if (notifEnabledRes.success && notifEnabledRes.value !== undefined)
-          setNotificationSoundsEnabled(notifEnabledRes.value)
-        if (soundRes.success && soundRes.value) setSelectedSound(soundRes.value)
         if (aiEnabledRes.success && aiEnabledRes.value !== undefined) setAiEnabled(aiEnabledRes.value)
         if (aiProviderRes.success && aiProviderRes.value) setAiProvider(aiProviderRes.value)
         if (aiApiKeyRes.success && aiApiKeyRes.value) setAiApiKey(aiApiKeyRes.value)
@@ -146,23 +129,13 @@ export function Settings() {
       const selectedPath = await window.nexworkAPI.selectFolder()
       if (selectedPath) {
         await window.nexworkAPI.config.setWorkspace(selectedPath)
-        message.success(`Workspace updated to: ${selectedPath}`)
+        message.success('Workspace updated')
         // Reload config from main so we respect per-account workspace mapping
         await loadSettings()
       }
     } catch (error: any) {
-      message.error(error.message || 'Failed to select workspace')
+      message.error(error.message || 'Could not set the workspace')
     }
-  }
-
-  const handleNotificationEnabledChange = (enabled: boolean) => {
-    setNotificationSoundsEnabled(enabled)
-    saveSetting('notificationSoundsEnabled', enabled)
-  }
-
-  const handleSoundChange = (sound: string) => {
-    setSelectedSound(sound)
-    saveSetting('notificationSound', sound)
   }
 
   const handleAiEnabledChange = (enabled: boolean) => {
@@ -257,7 +230,7 @@ export function Settings() {
       setConfig(updatedConfig)
     } catch (error) {
       console.error('Failed to save project dependencies:', error)
-      message.error('Failed to save project dependencies')
+      message.error('Could not save project dependencies')
     }
   }
 
@@ -266,9 +239,9 @@ export function Settings() {
       await window.nexworkAPI.system.setAutoLaunch(checked)
       setStartOnStartup(checked)
       localStorage.setItem('startOnStartup', checked.toString())
-      message.success(checked ? 'Auto-launch enabled' : 'Auto-launch disabled')
+      message.success(checked ? 'Auto-launch on' : 'Auto-launch off')
     } catch (error: any) {
-      message.error(error.message || 'Failed to update auto-launch setting')
+      message.error(error.message || 'Could not update auto-launch')
     }
   }
 
@@ -276,12 +249,12 @@ export function Settings() {
     const result = await window.nexworkAPI.plugins.setEnabled(pluginId, enabled)
 
     if (!result.success) {
-      message.error(result.error || 'Failed to update plugin')
+      message.error(result.error || 'Could not update the plugin')
       return false
     }
 
     setPlugins(result.plugins || [])
-    message.success(enabled ? 'Plugin enabled' : 'Plugin disabled')
+    message.success(enabled ? 'Plugin on' : 'Plugin off')
     return true
   }
 
@@ -289,12 +262,12 @@ export function Settings() {
     const result = await window.nexworkAPI.plugins.updateConfig(pluginId, pluginConfig)
 
     if (!result.success) {
-      message.error(result.error || 'Failed to save plugin config')
+      message.error(result.error || 'Could not save plugin settings')
       return false
     }
 
     setPlugins(result.plugins || [])
-    message.success('Plugin configuration saved')
+    message.success('Plugin settings saved')
     return true
   }
 
@@ -334,9 +307,6 @@ export function Settings() {
                     {plugins.filter((plugin) => plugin.enabled).length} integration(s) enabled
                   </Tag>
                   <Tag icon={<Sparkles size={12} />}>{aiEnabled ? 'AI terminal on' : 'AI terminal off'}</Tag>
-                  <Tag icon={<BellRing size={12} />}>
-                    {notificationSoundsEnabled ? 'Sound alerts on' : 'Sound alerts off'}
-                  </Tag>
                 </Space>
               </Space>
             </Col>
@@ -415,13 +385,6 @@ export function Settings() {
             <Col xs={24} xxl={12}>
               <Space direction="vertical" style={{ width: '100%' }} size="large">
                 <AppearanceSettings selectedTheme={selectedTheme} onThemeChange={setSelectedTheme} isDark={isDark} />
-                <NotificationSettings
-                  enabled={notificationSoundsEnabled}
-                  onEnabledChange={handleNotificationEnabledChange}
-                  selectedSound={selectedSound}
-                  onSoundChange={handleSoundChange}
-                  isDark={isDark}
-                />
               </Space>
             </Col>
             <Col xs={24} xxl={12}>

@@ -338,10 +338,10 @@ export const memstackPlugin: MainPlugin = {
         )
       }
 
-      let gitAccount
+      let _gitAccount
       try {
-        gitAccount = getActiveGitContext()
-      } catch (err) {
+        _gitAccount = getActiveGitContext()
+      } catch {
         throw new Error(
           'MemStack push aborted: You have no active Git account with a saved token. Re-authenticate on the Dashboard.',
         )

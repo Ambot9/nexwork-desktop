@@ -551,7 +551,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       })
 
       if (!result.success) {
-        message.error(result.error || 'Failed to prepare requirement summary')
+        message.error(result.error || 'Could not prepare the summary')
         return false
       }
 
@@ -559,15 +559,15 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         result.result?.summary || result.result?.requirementSummary || result.result?.content || result.result?.text
 
       if (!summary || typeof summary !== 'string') {
-        message.error('Feature Memory service did not return a requirement summary')
+        message.error('No summary came back')
         return false
       }
 
       form.setFieldValue('memstackRequirementSummary', summary.trim())
-      message.success('Requirement summary prepared')
+      message.success('Summary ready')
       return true
     } catch (error: any) {
-      message.error(error.message || 'Failed to prepare requirement summary')
+      message.error(error.message || 'Could not prepare the summary')
       return false
     } finally {
       setPreparingRequirement(false)
@@ -620,7 +620,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       }
 
       await window.nexworkAPI.features.create(dto)
-      message.success('Feature created successfully!')
+      message.success('Feature created')
 
       // Reset and close
       form.resetFields()
@@ -632,7 +632,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       onClose()
     } catch (error: any) {
       console.error('Failed to create feature:', error)
-      message.error(error.message || 'Failed to create feature')
+      message.error(error.message || 'Could not create the feature')
     } finally {
       setLoading(false)
     }
@@ -649,7 +649,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
 
   const handlePullAll = async () => {
     try {
-      message.loading({ content: 'Pulling all projects...', key: 'pull-all', duration: 0 })
+      message.loading({ content: 'Pulling projects...', key: 'pull-all', duration: 0 })
 
       const config = await window.nexworkAPI.config.load()
       let successCount = 0
@@ -673,10 +673,10 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       }
 
       if (failCount === 0) {
-        message.success({ content: `All ${successCount} projects pulled successfully!`, key: 'pull-all', duration: 3 })
+        message.success({ content: `${successCount} project(s) pulled`, key: 'pull-all', duration: 3 })
       } else {
         message.warning({
-          content: `Pulled ${successCount} projects, ${failCount} failed`,
+          content: `${successCount} pulled, ${failCount} failed`,
           key: 'pull-all',
           duration: 5,
         })
@@ -685,7 +685,7 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
       // Reload data to refresh status
       await loadData()
     } catch (error: any) {
-      message.error({ content: `Failed to pull: ${error.message}`, key: 'pull-all', duration: 5 })
+      message.error({ content: error.message || 'Could not pull projects', key: 'pull-all', duration: 5 })
     }
   }
 
