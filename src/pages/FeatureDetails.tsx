@@ -1,5 +1,18 @@
 import { useState, useEffect } from 'react'
-import { message, Modal, Space, Typography, DatePicker, Alert, Button, Select, Switch, Card, Tabs } from 'antd'
+import {
+  message,
+  Modal,
+  Space,
+  Typography,
+  DatePicker,
+  Alert,
+  Button,
+  Select,
+  Switch,
+  Card,
+  Tabs,
+  Checkbox,
+} from 'antd'
 import dayjs from 'dayjs'
 import type { Feature, FeatureStats } from '../types'
 import type { PluginDescriptor } from '../plugins/types'
@@ -445,68 +458,141 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     const memstackReady = plugins.some(
       (plugin) => plugin.id === 'memstack' && plugin.enabled && plugin.status.state === 'ready',
     )
+    const memstackPlugin = plugins.find((plugin) => plugin.id === 'memstack' && plugin.enabled)
+    const desktopSyncEnabled = memstackPlugin?.config?.storageWriteMode === 'desktop'
+    let syncToMemstack = memstackReady && Boolean(feature?.pluginRefs?.memstack?.tracked)
+    let desktopSyncBranch =
+      typeof memstackPlugin?.config?.storageBranch === 'string' && memstackPlugin.config.storageBranch.trim()
+        ? memstackPlugin.config.storageBranch.trim()
+        : 'main'
 
-    Modal.confirm({
-      title: 'Complete feature?',
-      content: (
-        <Space direction="vertical">
-          <Text>This will mark the following as completed:</Text>
-          <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-            <li>
-              Feature: <strong>{feature.name}</strong>
-            </li>
-            <li>
-              <strong>{feature.projects.length}</strong> project(s): {feature.projects.map((p) => p.name).join(', ')}
-            </li>
-            <li>
-              All project statuses will be set to <strong>"Completed"</strong>
-            </li>
-            {worktreeCount > 0 && (
+    const openCompleteModal = (branchOptions: string[]) =>
+      Modal.confirm({
+        title: 'Complete feature?',
+        content: (
+          <Space direction="vertical">
+            <Text>This will mark the following as completed:</Text>
+            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
               <li>
-                <strong>{worktreeCount}</strong> worktree folder(s) will remain (you can delete them later)
+                Feature: <strong>{feature.name}</strong>
               </li>
+              <li>
+                <strong>{feature.projects.length}</strong> project(s): {feature.projects.map((p) => p.name).join(', ')}
+              </li>
+              <li>
+                All project statuses will be set to <strong>"Completed"</strong>
+              </li>
+              {worktreeCount > 0 && (
+                <li>
+                  <strong>{worktreeCount}</strong> worktree folder(s) will remain (you can delete them later)
+                </li>
+              )}
+            </ul>
+            {inProgressCount > 0 && (
+              <Alert
+                message={`${inProgressCount} project(s) are still in progress`}
+                description="Are you sure you want to mark them as completed?"
+                type="warning"
+                showIcon
+                style={{ marginTop: 8 }}
+              />
             )}
-          </ul>
-          {inProgressCount > 0 && (
-            <Alert
-              message={`${inProgressCount} project(s) are still in progress`}
-              description="Are you sure you want to mark them as completed?"
-              type="warning"
-              showIcon
-              style={{ marginTop: 8 }}
-            />
-          )}
-          {completedCount === feature.projects.length && (
-            <Text type="success">All projects are already marked as completed</Text>
-          )}
-          <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-            You can still access this feature later. This just marks it as finished.
-          </Text>
-          {memstackReady && (
-            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-              ✓ Feature Memory will be updated automatically.
+            {completedCount === feature.projects.length && (
+              <Text type="success">All projects are already marked as completed</Text>
+            )}
+            <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
+              You can still access this feature later. This just marks it as finished.
             </Text>
-          )}
-        </Space>
-      ),
-      okText: 'Complete Feature',
-      okType: 'primary',
-      cancelText: 'Cancel',
-      onOk: async () => {
-        try {
-          message.loading({ content: 'Completing feature...', key: 'complete-feature', duration: 0 })
-          await window.nexworkAPI.features.complete(featureName, true)
-          message.success({ content: 'Feature completed', key: 'complete-feature', duration: 3 })
-          onBack()
-        } catch (error: any) {
-          message.error({
-            content: errMsg(Err.CompleteFailed, undefined, error.message),
-            key: 'complete-feature',
-            duration: 5,
-          })
-        }
-      },
-    })
+            {memstackReady && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '10px 12px',
+                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  borderRadius: 12,
+                }}
+              >
+                <div>
+                  <Text strong>Sync to Feature Memory</Text>
+                  <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                    Store the final completion state in MemStack when this feature is completed.
+                  </Text>
+                </div>
+                <Checkbox
+                  defaultChecked={syncToMemstack}
+                  onChange={(checkedEvent: { target: { checked: boolean } }) => {
+                    syncToMemstack = checkedEvent.target.checked
+                  }}
+                />
+              </div>
+            )}
+            {memstackReady && desktopSyncEnabled && syncToMemstack && (
+              <div>
+                <Text strong style={{ fontSize: 12 }}>
+                  Docs Branch
+                </Text>
+                <Select
+                  style={{ width: '100%', marginTop: 4 }}
+                  defaultValue={desktopSyncBranch}
+                  options={branchOptions.map((branch) => ({ label: branch, value: branch }))}
+                  onChange={(value) => {
+                    desktopSyncBranch = value
+                  }}
+                />
+                <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
+                  Nexwork will switch to this branch, pull latest if needed, then commit the Feature Memory docs there.
+                </Text>
+              </div>
+            )}
+          </Space>
+        ),
+        okText: 'Complete Feature',
+        okType: 'primary',
+        cancelText: 'Cancel',
+        onOk: async () => {
+          try {
+            message.loading({ content: 'Completing feature...', key: 'complete-feature', duration: 0 })
+            const result = await window.nexworkAPI.features.complete(featureName, true, {
+              syncToMemstack,
+              desktopSyncBranch,
+            })
+            message.success({
+              content: result?.memstackMessage ? `Feature completed. ${result.memstackMessage}` : 'Feature completed',
+              key: 'complete-feature',
+              duration: 4,
+            })
+            onBack()
+          } catch (error: any) {
+            message.error({
+              content: errMsg(Err.CompleteFailed, undefined, error.message),
+              key: 'complete-feature',
+              duration: 5,
+            })
+          }
+        },
+      })
+
+    if (memstackReady && desktopSyncEnabled && syncToMemstack) {
+      window.nexworkAPI.plugins
+        .runAction('memstack', 'listDesktopSyncBranches')
+        .then((result) => {
+          const branches =
+            Array.isArray(result?.result?.branches) && result.result.branches.length > 0
+              ? result.result.branches
+              : [desktopSyncBranch]
+          if (!branches.includes(desktopSyncBranch)) {
+            desktopSyncBranch = branches[0]
+          }
+          openCompleteModal(branches)
+        })
+        .catch(() => openCompleteModal([desktopSyncBranch]))
+      return
+    }
+
+    openCompleteModal([desktopSyncBranch])
   }
 
   const handleDelete = () => {

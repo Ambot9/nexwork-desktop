@@ -420,6 +420,7 @@ export function Settings() {
             <Col xs={24} xxl={16}>
               <PluginSettings
                 plugins={plugins}
+                workspaceRoot={config?.workspaceRoot}
                 onToggle={handlePluginToggle}
                 onSaveConfig={handlePluginSaveConfig}
                 onRefresh={loadSettings}

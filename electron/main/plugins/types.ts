@@ -48,6 +48,7 @@ export interface PluginEventMap {
     feature: any
     workspaceRoot: string
     syncToMemstack?: boolean
+    desktopSyncBranch?: string
   }
   'feature.deleted': {
     featureName: string
@@ -70,6 +71,7 @@ export interface PluginEventMap {
 
 export interface PluginEventResult {
   pluginRef?: FeaturePluginRef
+  message?: string
 }
 
 export interface MainPlugin extends PluginManifest {

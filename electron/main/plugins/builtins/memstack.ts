@@ -1,9 +1,19 @@
+import { execFile } from 'node:child_process'
+import { promises as fs } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { authStore } from '../../auth-store'
 import type { FeaturePluginRef, MainPlugin, PluginStatus } from '../types'
+
+const execFileAsync = promisify(execFile)
 
 function getMemstackStatus(config?: Record<string, any>): PluginStatus {
   const baseUrl = typeof config?.baseUrl === 'string' ? config.baseUrl.trim() : ''
   const storageRepoFullName = typeof config?.storageRepoFullName === 'string' ? config.storageRepoFullName.trim() : ''
+  const writeMode = typeof config?.storageWriteMode === 'string' ? config.storageWriteMode.trim() : 'server'
+  const localStorageRepoPath =
+    typeof config?.localStorageRepoPath === 'string' ? config.localStorageRepoPath.trim() : ''
 
   if (!baseUrl) {
     return {
@@ -14,9 +24,14 @@ function getMemstackStatus(config?: Record<string, any>): PluginStatus {
 
   return {
     state: 'ready',
-    message: storageRepoFullName
-      ? `Configured for plugin integration. Storage repo: ${storageRepoFullName}`
-      : 'Configured for plugin integration. Choose a storage repo when you want Git-backed memory writes.',
+    message:
+      writeMode === 'desktop'
+        ? localStorageRepoPath
+          ? `Desktop Sync ready. Local repo: ${localStorageRepoPath}`
+          : 'Desktop Sync selected. Save the setup to create the local Wiki repo.'
+        : storageRepoFullName
+          ? `Server Sync ready. Storage repo: ${storageRepoFullName}`
+          : 'Server Sync selected. Choose a storage repo when you want Git-backed memory writes.',
   }
 }
 
@@ -47,7 +62,33 @@ function buildStorageTarget(config?: Record<string, any>) {
     branch:
       typeof config?.storageBranch === 'string' && config.storageBranch.trim() ? config.storageBranch.trim() : 'main',
     path: typeof config?.storagePath === 'string' && config.storagePath.trim() ? config.storagePath.trim() : 'Features',
+    writeMode:
+      typeof config?.storageWriteMode === 'string' && config.storageWriteMode.trim()
+        ? config.storageWriteMode.trim()
+        : 'server',
+    localRepoPath:
+      typeof config?.localStorageRepoPath === 'string' && config.localStorageRepoPath.trim()
+        ? config.localStorageRepoPath.trim()
+        : '',
   }
+}
+
+function isDesktopSync(config?: Record<string, any>) {
+  return (typeof config?.storageWriteMode === 'string' ? config.storageWriteMode.trim() : 'server') === 'desktop'
+}
+
+function resolveDesktopSyncRepoPath(config?: Record<string, any>, workspaceRoot?: string) {
+  const configuredPath = typeof config?.localStorageRepoPath === 'string' ? config.localStorageRepoPath.trim() : ''
+
+  if (configuredPath) {
+    return configuredPath
+  }
+
+  if (workspaceRoot?.trim()) {
+    return join(workspaceRoot.trim(), 'Wiki')
+  }
+
+  return ''
 }
 
 function buildGitAccountPayload() {
@@ -90,6 +131,240 @@ async function postMemstackSync(config: Record<string, any> | undefined, payload
   }
 
   return response.json()
+}
+
+async function prepareDesktopSyncFiles(config: Record<string, any> | undefined, payload: any) {
+  const baseUrl = requireBaseUrl(config)
+  const apiKey = typeof config?.apiKey === 'string' ? config.apiKey.trim() : ''
+  const response = await fetch(`${baseUrl}/api/feature-memories/prepare-sync-files`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      ...payload,
+      storageTarget: buildStorageTarget(config),
+      gitAccount: null,
+    }),
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(body || `Feature Memory file prep failed (${response.status})`)
+  }
+
+  return response.json()
+}
+
+async function runGit(repoPath: string, args: string[]) {
+  return execFileAsync('git', ['-C', repoPath, ...args], { maxBuffer: 10 * 1024 * 1024 })
+}
+
+async function runGitAllowFailure(repoPath: string, args: string[]) {
+  try {
+    const result = await runGit(repoPath, args)
+    return { success: true, stdout: result.stdout, stderr: result.stderr }
+  } catch (error: any) {
+    return {
+      success: false,
+      stdout: error?.stdout || '',
+      stderr: error?.stderr || error?.message || '',
+      code: error?.code,
+    }
+  }
+}
+
+async function ensureDesktopSyncBranch(repoPath: string, branch: string) {
+  await runGitAllowFailure(repoPath, ['fetch', 'origin', '--prune'])
+
+  const localBranch = await runGitAllowFailure(repoPath, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
+  const remoteBranch = await runGitAllowFailure(repoPath, [
+    'show-ref',
+    '--verify',
+    '--quiet',
+    `refs/remotes/origin/${branch}`,
+  ])
+
+  if (localBranch.success) {
+    const checkout = await runGitAllowFailure(repoPath, ['checkout', branch])
+    if (!checkout.success) throw new Error(checkout.stderr || `Could not checkout ${branch}`)
+  } else if (remoteBranch.success) {
+    const checkout = await runGitAllowFailure(repoPath, ['checkout', '-b', branch, '--track', `origin/${branch}`])
+    if (!checkout.success) throw new Error(checkout.stderr || `Could not checkout ${branch}`)
+  } else {
+    const checkout = await runGitAllowFailure(repoPath, ['checkout', '-b', branch])
+    if (!checkout.success) throw new Error(checkout.stderr || `Could not create ${branch}`)
+  }
+
+  if (remoteBranch.success) {
+    const pull = await runGitAllowFailure(repoPath, ['pull', '--ff-only', 'origin', branch])
+    if (!pull.success) throw new Error(pull.stderr || `Could not pull ${branch}`)
+  }
+}
+
+async function ensureDesktopSyncRepo(repoPath: string) {
+  await fs.mkdir(repoPath, { recursive: true })
+
+  if (!existsSync(join(repoPath, '.git'))) {
+    await runGit(repoPath, ['init'])
+  }
+
+  const docsRoot = join(repoPath, 'Wiki')
+  const featuresDir = join(docsRoot, 'Features')
+  const topicsDir = join(docsRoot, 'Topics')
+  await fs.mkdir(docsRoot, { recursive: true })
+  await fs.mkdir(featuresDir, { recursive: true })
+  await fs.mkdir(topicsDir, { recursive: true })
+
+  const docsProjectContextPath = join(docsRoot, 'PROJECT_CONTEXT.md')
+
+  if (!existsSync(docsProjectContextPath)) {
+    await fs.writeFile(
+      docsProjectContextPath,
+      [
+        '# MemStack Project Context',
+        '',
+        '## What Is MemStack',
+        'MemStack is a knowledge backend for storing and structuring business feature memory.',
+        '',
+        '## Why MemStack Exists',
+        'Teams need a durable record of:',
+        '- what customers requested',
+        '- what was implemented',
+        '- how business logic currently works',
+        '- how money-related logic is handled',
+        '- how to answer customer questions later',
+        '',
+        '## Relationship With Nexwork',
+        'Nexwork is the workflow tool.',
+        'MemStack is the knowledge store.',
+        'Nexwork sends requirement and implementation context to MemStack, and MemStack writes structured markdown plus searchable metadata.',
+        '',
+        '## Core Document Types',
+        '- `Features/<year>/<feature-slug>/requirement.md`',
+        '- `Features/<year>/<feature-slug>/implementation.md`',
+        '- `Wiki/<topic>.md`',
+        '',
+        '## Why Markdown Is Used',
+        'Markdown is readable by humans, easy to version in Git, and easy for AI retrieval when sectioned correctly.',
+        '',
+        '## Retrieval Guidance',
+        'AI should prefer:',
+        '1. metadata filters',
+        '2. section-level retrieval',
+        '3. small grounded answers with sources',
+        '',
+        '## Long-Term Goal',
+        'MemStack should help answer future questions like:',
+        '- what was requested?',
+        '- what changed?',
+        '- how does this business rule work now?',
+        '- is this likely expected behavior or a bug?',
+      ].join('\n'),
+      'utf8',
+    )
+  }
+}
+
+async function writeDesktopSyncFiles(
+  config: Record<string, any> | undefined,
+  prepared: { files?: Array<{ path: string; content: string }>; commitMessage?: string },
+  workspaceRoot?: string,
+  branchOverride?: string,
+) {
+  const repoPath = resolveDesktopSyncRepoPath(config, workspaceRoot)
+  if (!repoPath) {
+    throw new Error('Save Desktop Sync setup first so Nexwork can create the local Wiki repo.')
+  }
+
+  await ensureDesktopSyncRepo(repoPath)
+
+  const branch = branchOverride?.trim()
+    ? branchOverride.trim()
+    : typeof config?.storageBranch === 'string' && config.storageBranch.trim()
+      ? config.storageBranch.trim()
+      : 'main'
+
+  await ensureDesktopSyncBranch(repoPath, branch)
+
+  const files = Array.isArray(prepared.files) ? prepared.files : []
+  if (files.length === 0) {
+    return { changed: false, repoPath, branch, docsPath: join(repoPath, 'Wiki') }
+  }
+
+  const writtenPaths: string[] = []
+  const docsPath = join(repoPath, 'Wiki')
+  const resolvedDocsPath = resolve(docsPath)
+  for (const file of files) {
+    let relativePath = String(file.path || '').replace(/^\/+/, '')
+    if (relativePath.startsWith('Wiki/')) {
+      relativePath = relativePath.replace(/^Wiki\//, 'Topics/')
+    }
+    if (!relativePath) continue
+    const fullPath = resolve(docsPath, relativePath)
+    if (!fullPath.startsWith(`${resolvedDocsPath}/`) && fullPath !== resolvedDocsPath) {
+      throw new Error(`Refusing to write outside the local repo: ${relativePath}`)
+    }
+    await fs.mkdir(dirname(fullPath), { recursive: true })
+    await fs.writeFile(fullPath, file.content || '', 'utf8')
+    writtenPaths.push(relativePath)
+  }
+
+  if (writtenPaths.length === 0) {
+    return { changed: false, repoPath, branch, docsPath }
+  }
+
+  const stagePaths = writtenPaths.map((relativePath) => join('Wiki', relativePath).split('\\').join('/'))
+
+  await runGit(repoPath, ['add', '--', ...stagePaths])
+  const staged = await runGitAllowFailure(repoPath, ['diff', '--cached', '--name-only', '--', ...stagePaths])
+  if (!staged.stdout.trim()) {
+    return { changed: false, repoPath, branch, docsPath }
+  }
+
+  await runGit(repoPath, [
+    'commit',
+    '-m',
+    prepared.commitMessage || 'docs(memstack): sync feature memory',
+    '--',
+    ...stagePaths,
+  ])
+
+  return { changed: true, repoPath, branch, docsPath, committed: true }
+}
+
+function buildDesktopSyncMessage(result: any) {
+  const repoPath = result?.desktopSync?.docsPath || result?.desktopSync?.repoPath
+  const branch = result?.desktopSync?.branch
+
+  if (!repoPath) {
+    return undefined
+  }
+
+  return branch ? `Docs committed in ${repoPath} on branch ${branch}` : `Docs committed in ${repoPath}`
+}
+
+async function syncFeatureMemory(config: Record<string, any> | undefined, payload: any) {
+  if (isDesktopSync(config)) {
+    const prepared = await prepareDesktopSyncFiles(config, payload)
+    const desktopSync = await writeDesktopSyncFiles(
+      config,
+      prepared,
+      typeof payload?.workspaceRoot === 'string' ? payload.workspaceRoot : '',
+      payload?.desktopSyncBranch,
+    )
+    return {
+      ...prepared,
+      desktopSync,
+    }
+  }
+
+  return postMemstackSync(config, payload)
+}
+
+function isTrackedFeature(feature?: any) {
+  return feature?.pluginRefs?.memstack?.tracked === true
 }
 
 function buildSyncPluginRef(
@@ -212,11 +487,148 @@ export const memstackPlugin: MainPlugin = {
       type: 'text',
       placeholder: 'Features',
     },
+    {
+      key: 'storageWriteMode',
+      label: 'Storage Write Mode',
+      type: 'text',
+      placeholder: 'server',
+    },
+    {
+      key: 'localStorageRepoPath',
+      label: 'Local Storage Repo Path',
+      type: 'text',
+      placeholder: '/Users/name/workspace/Wiki',
+    },
   ],
   getStatus: (state) => getMemstackStatus(state.config),
   runAction: async (action, _payload, context) => {
     if (action === 'validateConfig') {
-      return getMemstackStatus(context.state.config)
+      const status = getMemstackStatus(context.state.config)
+      const writeMode =
+        typeof context.state.config?.storageWriteMode === 'string'
+          ? context.state.config.storageWriteMode.trim()
+          : 'server'
+      const baseUrl = typeof context.state.config?.baseUrl === 'string' ? context.state.config.baseUrl.trim() : ''
+      const storageRepoFullName =
+        typeof context.state.config?.storageRepoFullName === 'string'
+          ? context.state.config.storageRepoFullName.trim()
+          : ''
+      const localStorageRepoPath =
+        typeof context.state.config?.localStorageRepoPath === 'string'
+          ? context.state.config.localStorageRepoPath.trim()
+          : ''
+
+      if (status.state !== 'ready') {
+        return status
+      }
+
+      try {
+        const health = await fetch(`${requireBaseUrl(context.state.config)}/healthz`)
+        if (!health.ok) {
+          return {
+            state: 'error',
+            message: 'Could not reach the MemStack service.',
+          }
+        }
+      } catch {
+        return {
+          state: 'error',
+          message: 'Could not reach the MemStack service.',
+        }
+      }
+
+      if (writeMode === 'desktop') {
+        if (!baseUrl) {
+          return {
+            state: 'error',
+            message: 'Desktop Sync still needs a MemStack service URL.',
+          }
+        }
+
+        if (!localStorageRepoPath) {
+          return {
+            state: 'error',
+            message: 'Save Desktop Sync setup first so Nexwork can create the local Wiki repo.',
+          }
+        }
+
+        if (!existsSync(localStorageRepoPath)) {
+          return {
+            state: 'error',
+            message: 'Local storage repo path was not found.',
+          }
+        }
+
+        if (!existsSync(join(localStorageRepoPath, '.git'))) {
+          return {
+            state: 'error',
+            message: 'The local storage path is not a git repository.',
+          }
+        }
+
+        return {
+          state: 'ready',
+          message: 'Desktop Sync is ready.',
+        }
+      }
+
+      if (!storageRepoFullName) {
+        return {
+          state: 'error',
+          message: 'Choose a storage repository first.',
+        }
+      }
+
+      return {
+        state: 'ready',
+        message: 'Server Sync is ready.',
+      }
+    }
+
+    if (action === 'listDesktopSyncBranches') {
+      const localStorageRepoPath =
+        typeof context.state.config?.localStorageRepoPath === 'string'
+          ? context.state.config.localStorageRepoPath.trim()
+          : ''
+
+      if (!localStorageRepoPath || !existsSync(join(localStorageRepoPath, '.git'))) {
+        return {
+          branches: [
+            typeof context.state.config?.storageBranch === 'string' && context.state.config.storageBranch.trim()
+              ? context.state.config.storageBranch.trim()
+              : 'main',
+          ],
+        }
+      }
+
+      await runGitAllowFailure(localStorageRepoPath, ['fetch', 'origin', '--prune'])
+      const refs = await runGitAllowFailure(localStorageRepoPath, [
+        'for-each-ref',
+        '--format=%(refname:short)',
+        'refs/heads',
+        'refs/remotes/origin',
+      ])
+
+      const branches = Array.from(
+        new Set(
+          refs.stdout
+            .split('\n')
+            .map((line: string) => line.trim())
+            .filter(Boolean)
+            .map((line: string) => line.replace(/^origin\//, ''))
+            .filter((line: string) => line !== 'HEAD'),
+        ),
+      )
+
+      if (branches.length === 0) {
+        branches.push(
+          typeof context.state.config?.storageBranch === 'string' && context.state.config.storageBranch.trim()
+            ? context.state.config.storageBranch.trim()
+            : 'main',
+        )
+      }
+
+      return { branches }
     }
 
     if (action === 'listStorageRepos') {
@@ -301,7 +713,7 @@ export const memstackPlugin: MainPlugin = {
     }
 
     try {
-      const result = await postMemstackSync(context.state.config, {
+      const result = await syncFeatureMemory(context.state.config, {
         eventName: 'feature.created',
         feature: payload.feature,
         pluginData: {
@@ -316,6 +728,7 @@ export const memstackPlugin: MainPlugin = {
           tracked: true,
           externalId: result?.externalFeatureId || payload.feature.name,
         },
+        message: isDesktopSync(context.state.config) ? buildDesktopSyncMessage(result) : undefined,
       }
     } catch (error) {
       return {
@@ -327,34 +740,45 @@ export const memstackPlugin: MainPlugin = {
     }
   },
   onFeatureCompleted: async (payload, context) => {
+    if (payload.syncToMemstack === false) {
+      return
+    }
+
+    if (!isTrackedFeature(payload.feature)) {
+      return
+    }
+
     try {
-      const storageRepoFullName =
-        typeof context.state.config?.storageRepoFullName === 'string'
-          ? context.state.config.storageRepoFullName.trim()
-          : ''
-      if (!storageRepoFullName) {
-        throw new Error(
-          'MemStack push aborted: "Storage Repository" is completely empty! Please open Nexwork Settings -> Built-in Plugins -> Feature Memory and type your owner/repo target in the Storage Repository box.',
-        )
+      if (!isDesktopSync(context.state.config)) {
+        const storageRepoFullName =
+          typeof context.state.config?.storageRepoFullName === 'string'
+            ? context.state.config.storageRepoFullName.trim()
+            : ''
+        if (!storageRepoFullName) {
+          throw new Error(
+            'MemStack push aborted: "Storage Repository" is completely empty! Please open Nexwork Settings -> Built-in Plugins -> Feature Memory and type your owner/repo target in the Storage Repository box.',
+          )
+        }
+
+        try {
+          getActiveGitContext()
+        } catch {
+          throw new Error(
+            'MemStack push aborted: You have no active Git account with a saved token. Re-authenticate on the Dashboard.',
+          )
+        }
       }
 
-      let _gitAccount
-      try {
-        _gitAccount = getActiveGitContext()
-      } catch {
-        throw new Error(
-          'MemStack push aborted: You have no active Git account with a saved token. Re-authenticate on the Dashboard.',
-        )
-      }
-
-      await postMemstackSync(context.state.config, {
+      const result = await syncFeatureMemory(context.state.config, {
         eventName: 'feature.completed',
         feature: payload.feature,
         workspaceRoot: payload.workspaceRoot,
+        desktopSyncBranch: payload.desktopSyncBranch,
       })
 
       return {
         pluginRef: buildSyncPluginRef(payload, 'feature.completed', { status: 'success' }),
+        message: isDesktopSync(context.state.config) ? buildDesktopSyncMessage(result) : undefined,
       }
     } catch (error) {
       return {
@@ -363,8 +787,12 @@ export const memstackPlugin: MainPlugin = {
     }
   },
   onFeatureScopeUpdated: async (payload, context) => {
+    if (!isTrackedFeature(payload.feature)) {
+      return
+    }
+
     try {
-      await postMemstackSync(context.state.config, {
+      const result = await syncFeatureMemory(context.state.config, {
         eventName: 'feature.scope.updated',
         feature: payload.feature,
         featureName: payload.featureName,
@@ -374,6 +802,7 @@ export const memstackPlugin: MainPlugin = {
 
       return {
         pluginRef: buildSyncPluginRef(payload, 'feature.scope.updated', { status: 'success' }),
+        message: isDesktopSync(context.state.config) ? buildDesktopSyncMessage(result) : undefined,
       }
     } catch (error) {
       return {

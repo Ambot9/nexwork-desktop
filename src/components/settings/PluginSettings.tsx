@@ -8,6 +8,7 @@ const { Search: SearchInput } = Input
 
 interface Props {
   plugins: PluginDescriptor[]
+  workspaceRoot?: string
   onToggle: (pluginId: string, enabled: boolean) => Promise<boolean>
   onSaveConfig: (pluginId: string, config: Record<string, any>) => Promise<boolean>
   onRefresh: () => Promise<void>
@@ -26,7 +27,7 @@ function getStatusTag(plugin: PluginDescriptor) {
   }
 }
 
-export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: Props) {
+export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig, onRefresh }: Props) {
   const [drafts, setDrafts] = useState<Record<string, Record<string, any>>>({})
   const [savingPluginId, setSavingPluginId] = useState<string | null>(null)
   const [validatingPluginId, setValidatingPluginId] = useState<string | null>(null)
@@ -71,6 +72,15 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
     ...(plugin.config || {}),
     ...(drafts[plugin.id] || {}),
   })
+  const getSuggestedMemstackRepoPath = () => (workspaceRoot ? `${workspaceRoot}/Wiki` : '')
+  const updatePluginDraft = (pluginId: string, next: Record<string, any>) =>
+    setDrafts((prev) => ({
+      ...prev,
+      [pluginId]: {
+        ...(prev[pluginId] || plugins.find((plugin) => plugin.id === pluginId)?.config || {}),
+        ...next,
+      },
+    }))
 
   useEffect(() => {
     setDrafts((prev) => {
@@ -101,7 +111,11 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
       setValidatingPluginId(pluginId)
       const result = await window.nexworkAPI.plugins.runAction(pluginId, 'validateConfig')
       if (result.success) {
-        message.success(result.result?.message || 'Plugin configuration looks valid.')
+        if (result.result?.state === 'error' || result.result?.state === 'not_configured') {
+          message.error(result.result?.message || 'This setup still needs more configuration.')
+        } else {
+          message.success(result.result?.message || 'Plugin configuration looks valid.')
+        }
       } else {
         message.error(result.error || 'Failed to validate plugin configuration.')
       }
@@ -234,7 +248,7 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
               {plugin.enabled && plugin.settingsSchema.length > 0 && (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   {plugin.settingsSchema
-                    .filter((field) => !isHiddenMemstackStorageField(plugin, field.key))
+                    .filter((field) => isVisibleSettingField(plugin, field.key, getEffectiveConfig(plugin)))
                     .map((field) => (
                       <div key={field.key}>
                         <Text strong style={{ fontSize: 12 }}>
@@ -260,6 +274,49 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
 
                   {plugin.id === 'memstack' && (
                     <>
+                      <Card size="small" style={{ borderRadius: 12 }}>
+                        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                          <Text strong style={{ fontSize: 13 }}>
+                            Storage Write Mode
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            Server Sync lets MemStack write docs directly. Desktop Sync is for private Git behind VPN or
+                            WARP, where this laptop will push the docs.
+                          </Text>
+                          <Space>
+                            <Button
+                              type={
+                                (getEffectiveConfig(plugin).storageWriteMode || 'server') === 'server'
+                                  ? 'primary'
+                                  : 'default'
+                              }
+                              onClick={() =>
+                                updatePluginDraft(plugin.id, {
+                                  storageWriteMode: 'server',
+                                })
+                              }
+                            >
+                              Server Sync
+                            </Button>
+                            <Button
+                              type={getEffectiveConfig(plugin).storageWriteMode === 'desktop' ? 'primary' : 'default'}
+                              onClick={() =>
+                                updatePluginDraft(plugin.id, {
+                                  storageWriteMode: 'desktop',
+                                  ...(getEffectiveConfig(plugin).localStorageRepoPath
+                                    ? {}
+                                    : getSuggestedMemstackRepoPath()
+                                      ? { localStorageRepoPath: getSuggestedMemstackRepoPath() }
+                                      : {}),
+                                })
+                              }
+                            >
+                              Desktop Sync
+                            </Button>
+                          </Space>
+                        </Space>
+                      </Card>
+
                       <Card
                         size="small"
                         style={{
@@ -272,8 +329,9 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                             Storage Repository
                           </Text>
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            Reuse the active Nexwork Git account and choose one repository where Feature Memory should
-                            store markdown.
+                            {getEffectiveConfig(plugin).storageWriteMode === 'desktop'
+                              ? 'Choose the Git repository this laptop should push Feature Memory docs to.'
+                              : 'Choose the repository where MemStack should write Feature Memory docs.'}
                           </Text>
                           <div>
                             <Button loading={repoPickerLoading} onClick={() => handleLoadRepos(plugin)}>
@@ -290,6 +348,12 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                               Saved Storage
                             </Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>
+                              Mode:{' '}
+                              {getEffectiveConfig(plugin).storageWriteMode === 'desktop'
+                                ? 'Desktop Sync'
+                                : 'Server Sync'}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
                               Repository: {getEffectiveConfig(plugin).storageRepoFullName}
                             </Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -302,6 +366,24 @@ export function PluginSettings({ plugins, onToggle, onSaveConfig, onRefresh }: P
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               Topic Wiki Path: {'Wiki/<topic>.md'}
                             </Text>
+                          </Space>
+                        </Card>
+                      )}
+
+                      {getEffectiveConfig(plugin).storageWriteMode === 'desktop' && (
+                        <Card size="small" style={{ borderRadius: 12 }}>
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            <Text strong style={{ fontSize: 13 }}>
+                              Local Storage Repo
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              Nexwork uses a dedicated <strong>Wiki</strong> repo under your workspace root. This path
+                              is created automatically when you save Desktop Sync.
+                            </Text>
+                            <Input
+                              readOnly
+                              value={getEffectiveConfig(plugin).localStorageRepoPath || getSuggestedMemstackRepoPath()}
+                            />
                           </Space>
                         </Card>
                       )}
@@ -579,10 +661,24 @@ function getExtensionCategory(plugin: PluginDescriptor): string {
   return 'Workflow'
 }
 
-function isHiddenMemstackStorageField(plugin: PluginDescriptor, fieldKey: string): boolean {
+function isVisibleSettingField(plugin: PluginDescriptor, fieldKey: string, config: Record<string, any>): boolean {
   if (plugin.id !== 'memstack') {
+    return true
+  }
+
+  const writeMode = config.storageWriteMode === 'desktop' ? 'desktop' : 'server'
+
+  if (
+    ['storageRepoFullName', 'storageBranch', 'storagePath', 'storageWriteMode', 'localStorageRepoPath'].includes(
+      fieldKey,
+    )
+  ) {
     return false
   }
 
-  return ['storageRepoFullName', 'storageBranch', 'storagePath'].includes(fieldKey)
+  if (writeMode === 'desktop' && ['baseUrl', 'apiKey'].includes(fieldKey)) {
+    return false
+  }
+
+  return true
 }

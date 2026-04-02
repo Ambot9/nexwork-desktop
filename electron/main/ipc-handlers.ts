@@ -210,6 +210,123 @@ function getConfigManager(): InstanceType<typeof ConfigManager> {
   return new ConfigManager(currentWorkspaceRoot)
 }
 
+async function ensureMemstackDesktopRepo(config: Record<string, any>) {
+  const nextConfig = { ...config }
+  const writeMode = typeof nextConfig.storageWriteMode === 'string' ? nextConfig.storageWriteMode.trim() : 'server'
+  if (writeMode !== 'desktop') {
+    return nextConfig
+  }
+
+  const workspaceRoot = currentWorkspaceRoot || ''
+  const storageRepoFullName =
+    typeof nextConfig.storageRepoFullName === 'string' ? nextConfig.storageRepoFullName.trim() : ''
+  const selectedRepoName = storageRepoFullName.split('/').filter(Boolean).pop() || ''
+  let desiredPath = workspaceRoot ? path.join(workspaceRoot, 'Wiki') : ''
+  const existingPath =
+    typeof nextConfig.localStorageRepoPath === 'string' && nextConfig.localStorageRepoPath.trim()
+      ? nextConfig.localStorageRepoPath.trim()
+      : ''
+
+  if (workspaceRoot && selectedRepoName) {
+    try {
+      const configManager = getConfigManager()
+      const workspaceConfig = configManager.loadConfig()
+      const matchedRelativePath = workspaceConfig.projectLocations?.[selectedRepoName]
+      if (matchedRelativePath) {
+        desiredPath = path.join(workspaceRoot, matchedRelativePath)
+      } else {
+        const directPath = path.join(workspaceRoot, selectedRepoName)
+        if (fs.existsSync(directPath)) {
+          desiredPath = directPath
+        }
+      }
+    } catch {
+      const directPath = workspaceRoot ? path.join(workspaceRoot, selectedRepoName) : ''
+      if (directPath && fs.existsSync(directPath)) {
+        desiredPath = directPath
+      }
+    }
+  }
+
+  if (!desiredPath) {
+    return nextConfig
+  }
+
+  if (
+    existingPath &&
+    existingPath !== desiredPath &&
+    path.basename(existingPath) === 'memstack-docs' &&
+    fs.existsSync(existingPath) &&
+    !fs.existsSync(desiredPath)
+  ) {
+    fs.renameSync(existingPath, desiredPath)
+  }
+
+  fs.mkdirSync(desiredPath, { recursive: true })
+
+  if (!fs.existsSync(path.join(desiredPath, '.git'))) {
+    await execAsync(`git -C ${JSON.stringify(desiredPath)} init`)
+  }
+
+  const docsRoot = path.join(desiredPath, 'Wiki')
+  const featuresDir = path.join(docsRoot, 'Features')
+  const wikiDir = path.join(docsRoot, 'Wiki')
+  fs.mkdirSync(docsRoot, { recursive: true })
+  fs.mkdirSync(featuresDir, { recursive: true })
+  fs.mkdirSync(wikiDir, { recursive: true })
+
+  const projectContextPath = path.join(docsRoot, 'PROJECT_CONTEXT.md')
+  if (!fs.existsSync(projectContextPath)) {
+    fs.writeFileSync(
+      projectContextPath,
+      [
+        '# MemStack Project Context',
+        '',
+        '## What Is MemStack',
+        'MemStack is a knowledge backend for storing and structuring business feature memory.',
+        '',
+        '## Why MemStack Exists',
+        'Teams need a durable record of:',
+        '- what customers requested',
+        '- what was implemented',
+        '- how business logic currently works',
+        '- how money-related logic is handled',
+        '- how to answer customer questions later',
+        '',
+        '## Relationship With Nexwork',
+        'Nexwork is the workflow tool.',
+        'MemStack is the knowledge store.',
+        'Nexwork sends requirement and implementation context to MemStack, and MemStack writes structured markdown plus searchable metadata.',
+        '',
+        '## Core Document Types',
+        '- `Features/<year>/<feature-slug>/requirement.md`',
+        '- `Features/<year>/<feature-slug>/implementation.md`',
+        '- `Wiki/<topic>.md`',
+        '',
+        '## Why Markdown Is Used',
+        'Markdown is readable by humans, easy to version in Git, and easy for AI retrieval when sectioned correctly.',
+        '',
+        '## Retrieval Guidance',
+        'AI should prefer:',
+        '1. metadata filters',
+        '2. section-level retrieval',
+        '3. small grounded answers with sources',
+        '',
+        '## Long-Term Goal',
+        'MemStack should help answer future questions like:',
+        '- what was requested?',
+        '- what changed?',
+        '- how does this business rule work now?',
+        '- is this likely expected behavior or a bug?',
+      ].join('\n'),
+      'utf8',
+    )
+  }
+
+  nextConfig.localStorageRepoPath = desiredPath
+  return nextConfig
+}
+
 function normalizeProjectDependencies(projectDependencies: unknown): Record<string, string[]> {
   if (!projectDependencies || typeof projectDependencies !== 'object') {
     return {}
@@ -274,6 +391,70 @@ function getConfiguredProjects(
     name,
     path: projectPath,
   }))
+}
+
+async function collectFeatureProjectCodeAreas(
+  configManager: InstanceType<typeof ConfigManager>,
+  feature: any,
+): Promise<any> {
+  if (!feature?.projects?.length) {
+    return feature
+  }
+
+  const configuredProjects = getConfiguredProjects(configManager)
+
+  const projectsWithChanges = await Promise.all(
+    feature.projects.map(async (project: any) => {
+      const projectConfig = configuredProjects.find((entry) => entry.name === project.name)
+      if (!projectConfig) {
+        return project
+      }
+
+      const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
+      const baseBranch = project.baseBranch?.trim() || 'main'
+      const featureBranch = project.branch?.trim()
+
+      let changedFiles: string[] = []
+
+      if (featureBranch) {
+        const diffResult = await execAsync(`git diff --name-only ${baseBranch}...${featureBranch}`, {
+          cwd: projectPath,
+        }).catch(() => null)
+
+        if (diffResult?.stdout) {
+          changedFiles = diffResult.stdout
+            .split('\n')
+            .map((line: string) => line.trim())
+            .filter(Boolean)
+            .slice(0, 20)
+        }
+      }
+
+      if (changedFiles.length === 0 && project.worktreePath) {
+        const worktreeDiff = await execAsync(`git diff --name-only ${baseBranch}...HEAD`, {
+          cwd: project.worktreePath,
+        }).catch(() => null)
+
+        if (worktreeDiff?.stdout) {
+          changedFiles = worktreeDiff.stdout
+            .split('\n')
+            .map((line: string) => line.trim())
+            .filter(Boolean)
+            .slice(0, 20)
+        }
+      }
+
+      return {
+        ...project,
+        changedFiles,
+      }
+    }),
+  )
+
+  return {
+    ...feature,
+    projects: projectsWithChanges,
+  }
 }
 
 async function createLocalFeatureBranch(
@@ -1079,52 +1260,66 @@ export function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('features:complete', async (_, name: string, _cleanup: boolean) => {
-    try {
-      requireWorkspace()
-      const configManager = getConfigManager()
-      const feature = configManager.getFeature(name)
+  ipcMain.handle(
+    'features:complete',
+    async (_, name: string, _cleanup: boolean, options?: { syncToMemstack?: boolean; desktopSyncBranch?: string }) => {
+      try {
+        requireWorkspace()
+        const configManager = getConfigManager()
+        const feature = configManager.getFeature(name)
 
-      if (feature) {
-        try {
-          const { authStore } = await import('./auth-store')
-          const auth = authStore.get()
-          const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
+        if (feature) {
+          try {
+            const { authStore } = await import('./auth-store')
+            const auth = authStore.get()
+            const ownerAccountId = auth.provider && auth.provider !== 'local' ? auth.activeAccountId : null
 
-          if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
-            throw new Error('Cannot complete feature owned by a different account')
+            if (ownerAccountId && feature.ownerAccountId && feature.ownerAccountId !== ownerAccountId) {
+              throw new Error('Cannot complete feature owned by a different account')
+            }
+
+            if (!ownerAccountId && feature.ownerAccountId) {
+              throw new Error('Cannot complete feature owned by a specific account in local mode')
+            }
+          } catch (authError: any) {
+            if (authError?.message?.startsWith('Cannot complete feature')) {
+              throw authError
+            }
+            // Otherwise ignore authStore errors
           }
 
-          if (!ownerAccountId && feature.ownerAccountId) {
-            throw new Error('Cannot complete feature owned by a specific account in local mode')
+          // Mark all projects as completed
+          feature.projects.forEach((project: any) => {
+            configManager.updateProjectStatus(name, project.name, 'completed')
+          })
+
+          const completedFeature = configManager.getFeature(name)
+          const completedFeatureWithCodeAreas = await collectFeatureProjectCodeAreas(configManager, completedFeature)
+          const pluginResults = await dispatchPluginEvent('feature.completed', {
+            feature: completedFeatureWithCodeAreas,
+            workspaceRoot: currentWorkspaceRoot,
+            syncToMemstack: options?.syncToMemstack,
+            desktopSyncBranch: options?.desktopSyncBranch,
+          })
+          applyPluginRefsToFeature(configManager, name, pluginResults)
+
+          updateTrayWithFeatures()
+          notifyFeatureCompleted(feature.name)
+
+          const memstackResult = pluginResults.find((entry) => entry.pluginId === 'memstack')?.result
+          return {
+            success: true,
+            memstackMessage: memstackResult?.message,
           }
-        } catch (authError: any) {
-          if (authError?.message?.startsWith('Cannot complete feature')) {
-            throw authError
-          }
-          // Otherwise ignore authStore errors
         }
 
-        // Mark all projects as completed
-        feature.projects.forEach((project: any) => {
-          configManager.updateProjectStatus(name, project.name, 'completed')
-        })
-
-        const completedFeature = configManager.getFeature(name)
-        const pluginResults = await dispatchPluginEvent('feature.completed', {
-          feature: completedFeature,
-          workspaceRoot: currentWorkspaceRoot,
-        })
-        applyPluginRefsToFeature(configManager, name, pluginResults)
-
-        updateTrayWithFeatures()
-        notifyFeatureCompleted(feature.name)
+        return { success: true }
+      } catch (error: any) {
+        log.error('Failed to complete feature:', error)
+        throw new Error(`Failed to complete feature: ${error.message}`)
       }
-    } catch (error: any) {
-      log.error('Failed to complete feature:', error)
-      throw new Error(`Failed to complete feature: ${error.message}`)
-    }
-  })
+    },
+  )
 
   // Clean up expired feature (delete worktrees, branches, and folder)
   ipcMain.handle('features:cleanupExpired', async (_, name: string) => {
@@ -2190,7 +2385,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('plugins:updateConfig', async (_, pluginId: string, config: Record<string, any>) => {
     try {
-      updatePluginConfig(pluginId, config)
+      const nextConfig = pluginId === 'memstack' ? await ensureMemstackDesktopRepo(config) : config
+      updatePluginConfig(pluginId, nextConfig)
       const plugins = await listPlugins()
       return {
         success: true,

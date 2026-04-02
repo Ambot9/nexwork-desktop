@@ -33,16 +33,17 @@ Nexwork Desktop is no longer just an early Electron dashboard. It is now a works
 - it reuses the active Nexwork Git account to list repositories
 - users pick a single storage repository for structured markdown
 - feature creation can collect requirement items after project selection
-- dashboard users can ask Feature Memory support-style questions
-- feature lifecycle sync events are sent to MemStack
+- Feature Memory sync is completion-driven instead of writing on every small status update
+- Desktop Sync can prepare docs through MemStack and commit them into a local docs repo for private-network Git setups
+- implementation notes now include lightweight code-area references for future developer continuation
 
 ### UI refinement
 
 - tighter sidebar and account footer
 - clearer settings hierarchy
 - improved feature details layout and hierarchy
-- side-by-side workspace and worktree cards
-- cleaner worktree and workspace rows
+- unified workspace panel
+- cleaner workspace rows
 - collapsible integrated terminal
 - better empty states for changes and commit timeline
 
@@ -75,17 +76,17 @@ src/components/CommitTimeline.tsx
 - feature-memory storage
 - structured markdown generation
 - requirement and implementation history
-- topic wiki documents
+- topic knowledge documents
 - ask / retrieval backend
 
 ## Release state
 
-- current desktop version: `1.2.0-beta.1`
+- current desktop version: `1.2.0-beta.2`
 - website download points to the latest GitHub release, not the latest branch commit
 - publishing a new desktop release is what updates the website download target
 
 ## Next practical focus
 
-1. validate full production sync between Nexwork and deployed MemStack
-2. harden remote GitHub / GitLab write behavior for Feature Memory storage
-3. continue UI polish where needed, but keep the main focus on reliability and release flow
+1. validate the latest Desktop Sync flow against the deployed MemStack service
+2. finish Topic-based knowledge shaping so wiki files stay business-topic-first
+3. continue reliability fixes before adding more surface area
