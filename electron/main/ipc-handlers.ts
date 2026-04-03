@@ -403,6 +403,47 @@ async function collectFeatureProjectCodeAreas(
 
   const configuredProjects = getConfiguredProjects(configManager)
 
+  const extractCodeSymbolsFromFile = async (absoluteFilePath: string) => {
+    const extension = path.extname(absoluteFilePath).toLowerCase()
+
+    if (extension !== '.cs') {
+      return []
+    }
+
+    const content = await fs.promises.readFile(absoluteFilePath, 'utf8').catch(() => '')
+    if (!content) {
+      return []
+    }
+
+    const symbols: Array<{ kind: string; name: string }> = []
+    const seen = new Set<string>()
+
+    const addSymbol = (kind: string, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      const key = `${kind}:${trimmed}`
+      if (seen.has(key)) return
+      seen.add(key)
+      symbols.push({ kind, name: trimmed })
+    }
+
+    for (const match of content.matchAll(/\b(class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/g)) {
+      addSymbol(match[1], match[2])
+    }
+
+    for (const match of content.matchAll(
+      /\b(?:public|private|protected|internal|static|virtual|override|async|sealed|partial|\s)+\s*[\w<>,?.[\]]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^;\n{}]*\)\s*(?:\{|=>)/g,
+    )) {
+      const methodName = match[1]
+      if (['if', 'for', 'foreach', 'while', 'switch', 'catch', 'using', 'lock', 'return'].includes(methodName)) {
+        continue
+      }
+      addSymbol('method', methodName)
+    }
+
+    return symbols.slice(0, 25)
+  }
+
   const projectsWithChanges = await Promise.all(
     feature.projects.map(async (project: any) => {
       const projectConfig = configuredProjects.find((entry) => entry.name === project.name)
@@ -412,41 +453,100 @@ async function collectFeatureProjectCodeAreas(
 
       const projectPath = path.join(currentWorkspaceRoot, projectConfig.path)
       const baseBranch = project.baseBranch?.trim() || 'main'
-      const featureBranch = project.branch?.trim()
+      const configuredBranch = project.branch?.trim()
 
       let changedFiles: string[] = []
+      const candidateBranches = new Set<string>()
 
-      if (featureBranch) {
-        const diffResult = await execAsync(`git diff --name-only ${baseBranch}...${featureBranch}`, {
-          cwd: projectPath,
-        }).catch(() => null)
+      const addBranchCandidate = (branch?: string | null) => {
+        const value = branch?.trim()
+        if (!value) return
+        candidateBranches.add(value)
 
-        if (diffResult?.stdout) {
-          changedFiles = diffResult.stdout
-            .split('\n')
-            .map((line: string) => line.trim())
-            .filter(Boolean)
-            .slice(0, 20)
+        if (/^feature\//i.test(value)) {
+          candidateBranches.add(value.replace(/^feature\//i, 'Feature/'))
+          candidateBranches.add(value.replace(/^feature\//i, 'feature/'))
         }
       }
 
-      if (changedFiles.length === 0 && project.worktreePath) {
-        const worktreeDiff = await execAsync(`git diff --name-only ${baseBranch}...HEAD`, {
+      addBranchCandidate(configuredBranch)
+
+      const collectNames = (stdout?: string) =>
+        (stdout || '')
+          .split('\n')
+          .map((line: string) => line.trim())
+          .filter(Boolean)
+
+      const collectStatusNames = (stdout?: string) =>
+        (stdout || '')
+          .split('\n')
+          .map((line: string) => line.trim())
+          .filter(Boolean)
+          .map((line: string) => {
+            if (line.startsWith('?? ')) return line.slice(3).trim()
+            if (line.length > 3) return line.slice(3).trim()
+            return line
+          })
+          .filter(Boolean)
+
+      if (project.worktreePath) {
+        const currentBranchResult = await execAsync('git rev-parse --abbrev-ref HEAD', {
           cwd: project.worktreePath,
         }).catch(() => null)
+        addBranchCandidate(currentBranchResult?.stdout?.trim())
+      }
 
-        if (worktreeDiff?.stdout) {
-          changedFiles = worktreeDiff.stdout
-            .split('\n')
-            .map((line: string) => line.trim())
-            .filter(Boolean)
-            .slice(0, 20)
+      const diffAttempts: Array<{ cwd: string; target: string }> = []
+
+      if (project.worktreePath) {
+        diffAttempts.push({ cwd: project.worktreePath, target: 'HEAD' })
+      }
+
+      for (const branchName of candidateBranches) {
+        diffAttempts.push({ cwd: projectPath, target: branchName })
+        if (project.worktreePath) {
+          diffAttempts.push({ cwd: project.worktreePath, target: branchName })
         }
       }
+
+      for (const attempt of diffAttempts) {
+        const diffResult = await execAsync(`git diff --name-only ${baseBranch}...${attempt.target}`, {
+          cwd: attempt.cwd,
+        }).catch(() => null)
+
+        const names = collectNames(diffResult?.stdout)
+        if (names.length > 0) {
+          changedFiles = names.slice(0, 20)
+          break
+        }
+      }
+
+      if (project.worktreePath) {
+        const statusResult = await execAsync('git status --short', {
+          cwd: project.worktreePath,
+        }).catch(() => null)
+        const statusFiles = collectStatusNames(statusResult?.stdout)
+        if (statusFiles.length > 0) {
+          changedFiles = Array.from(new Set([...changedFiles, ...statusFiles])).slice(0, 20)
+        }
+      }
+
+      const codeSymbols =
+        project.worktreePath && changedFiles.length > 0
+          ? (
+              await Promise.all(
+                changedFiles.map(async (filePath) => ({
+                  file: filePath,
+                  symbols: await extractCodeSymbolsFromFile(path.join(project.worktreePath, filePath)),
+                })),
+              )
+            ).filter((entry) => entry.symbols.length > 0)
+          : []
 
       return {
         ...project,
         changedFiles,
+        codeSymbols,
       }
     }),
   )
