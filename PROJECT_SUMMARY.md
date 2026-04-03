@@ -81,7 +81,7 @@ src/components/CommitTimeline.tsx
 
 ## Release state
 
-- current desktop version: `1.2.0-beta.2`
+- current desktop version: `1.2.0-beta.3`
 - website download points to the latest GitHub release, not the latest branch commit
 - publishing a new desktop release is what updates the website download target
 
