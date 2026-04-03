@@ -73,6 +73,25 @@ const TEMPLATE_PREVIEWS: Record<string, TemplatePreview> = {
   },
 }
 
+const STEP_GUIDANCE: Record<string, { title: string; description: string }> = {
+  'basic-info': {
+    title: 'Start with the feature identity',
+    description: 'Give the feature a clear name first. Nexwork will use it for branches, folders, and memory records.',
+  },
+  'select-projects': {
+    title: 'Choose the repos that belong to this feature',
+    description: 'Pick the projects you actually need. Nexwork can add required dependencies before setup continues.',
+  },
+  memstack: {
+    title: 'Capture memory only when it helps',
+    description: 'Use Feature Memory for requirement context and final continuation notes, not as a task tracker.',
+  },
+  'choose-template': {
+    title: 'Finish with the working doc template',
+    description: 'The template becomes the local README baseline for this feature after creation.',
+  },
+}
+
 export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureModalProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [form] = Form.useForm()
@@ -1257,6 +1276,14 @@ export function CreateFeatureModal({ open, onClose, onSuccess }: CreateFeatureMo
         responsive={false}
         style={{ marginBottom: 20, paddingInline: 4 }}
         items={stepItems}
+      />
+
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16, borderRadius: 14 }}
+        message={STEP_GUIDANCE[steps[currentStep].key]?.title}
+        description={STEP_GUIDANCE[steps[currentStep].key]?.description}
       />
 
       <Form

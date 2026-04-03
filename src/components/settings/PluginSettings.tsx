@@ -1,10 +1,9 @@
 import { Alert, Button, Card, Input, Modal, Space, Switch, Tag, Typography, message } from 'antd'
-import { AlertCircle, Cable, CheckCircle2, Plus, Puzzle, RefreshCw, Search } from 'lucide-react'
+import { AlertCircle, Cable, CheckCircle2, Puzzle, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { PluginDescriptor } from '../../plugins/types'
 
 const { Text } = Typography
-const { Search: SearchInput } = Input
 
 interface Props {
   plugins: PluginDescriptor[]
@@ -31,7 +30,6 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
   const [drafts, setDrafts] = useState<Record<string, Record<string, any>>>({})
   const [savingPluginId, setSavingPluginId] = useState<string | null>(null)
   const [validatingPluginId, setValidatingPluginId] = useState<string | null>(null)
-  const [addPluginOpen, setAddPluginOpen] = useState(false)
   const [togglingPluginId, setTogglingPluginId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [repoPickerPluginId, setRepoPickerPluginId] = useState<string | null>(null)
@@ -40,7 +38,6 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
   const [repoPickerUpdatingToken, setRepoPickerUpdatingToken] = useState(false)
   const [repoPickerAccountLabel, setRepoPickerAccountLabel] = useState('')
   const [repoPickerError, setRepoPickerError] = useState<{ message: string; isTokenExpired: boolean } | null>(null)
-  const [catalogQuery, setCatalogQuery] = useState('')
   const [repoPickerRepos, setRepoPickerRepos] = useState<
     Array<{
       id: string
@@ -53,18 +50,12 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
       webUrl?: string
     }>
   >([])
+  const [docsLayoutState, setDocsLayoutState] = useState<
+    Record<string, { hasOldLayout: boolean; message?: string; issues?: string[] }>
+  >({})
+  const [migratingPluginId, setMigratingPluginId] = useState<string | null>(null)
 
-  const enabledPlugins = plugins.filter((plugin) => plugin.enabled)
-  const availablePlugins = plugins.filter((plugin) => !plugin.enabled)
-  const normalizedCatalogQuery = catalogQuery.trim().toLowerCase()
-  const filteredAvailablePlugins = availablePlugins.filter((plugin) => {
-    if (!normalizedCatalogQuery) return true
-    return (
-      plugin.name.toLowerCase().includes(normalizedCatalogQuery) ||
-      plugin.description.toLowerCase().includes(normalizedCatalogQuery) ||
-      getExtensionCategory(plugin).toLowerCase().includes(normalizedCatalogQuery)
-    )
-  })
+  const installedPlugins = plugins
 
   const getDraftValue = (plugin: PluginDescriptor, key: string) =>
     drafts[plugin.id]?.[key] ?? plugin.config?.[key] ?? ''
@@ -96,6 +87,34 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
       return next
     })
   }, [plugins])
+
+  useEffect(() => {
+    const memstackPlugin = plugins.find((plugin) => plugin.id === 'memstack' && plugin.enabled)
+    if (!memstackPlugin) return
+
+    const effectiveConfig = {
+      ...(memstackPlugin.config || {}),
+      ...(drafts[memstackPlugin.id] || {}),
+    }
+
+    if (effectiveConfig.storageWriteMode !== 'desktop' || !effectiveConfig.localStorageRepoPath) {
+      return
+    }
+
+    window.nexworkAPI.plugins
+      .runAction(memstackPlugin.id, 'detectDocsLayout')
+      .then((result) => {
+        if (result.success) {
+          setDocsLayoutState((prev) => ({
+            ...prev,
+            [memstackPlugin.id]: result.result,
+          }))
+        }
+      })
+      .catch(() => {
+        // ignore detection failures in background UI
+      })
+  }, [plugins, drafts])
 
   const handleRefresh = async () => {
     try {
@@ -180,19 +199,14 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
           description="Extensions add focused workflow capabilities without changing the Nexwork core flow. Install only the ones your team actually uses."
         />
 
-        {enabledPlugins.length === 0 ? (
+        {installedPlugins.length === 0 ? (
           <Card size="small">
             <Space direction="vertical" style={{ width: '100%', textAlign: 'center' }} size="middle">
               <div>
-                <Text strong>No integrations enabled</Text>
+                <Text strong>No extensions available</Text>
                 <div>
-                  <Text type="secondary">Add an integration only when you need extra workflow support.</Text>
+                  <Text type="secondary">No registered extensions were found for this Nexwork build.</Text>
                 </div>
-              </div>
-              <div>
-                <Button type="primary" icon={<Plus size={14} />} onClick={() => setAddPluginOpen(true)}>
-                  Browse Extensions
-                </Button>
               </div>
             </Space>
           </Card>
@@ -201,13 +215,13 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
             <Text type="secondary" style={{ fontSize: 12 }}>
               Installed extensions
             </Text>
-            <Button icon={<Plus size={14} />} onClick={() => setAddPluginOpen(true)}>
-              Browse Extensions
-            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Turn an extension on or off without removing its saved setup.
+            </Text>
           </div>
         )}
 
-        {enabledPlugins.map((plugin) => (
+        {installedPlugins.map((plugin) => (
           <Card key={plugin.id} size="small">
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
@@ -274,6 +288,18 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
 
                   {plugin.id === 'memstack' && (
                     <>
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ borderRadius: 12 }}
+                        message="Feature Memory Setup"
+                        description={
+                          getEffectiveConfig(plugin).storageWriteMode === 'desktop'
+                            ? 'Use Desktop Sync when the docs repo is only reachable from this laptop, such as private Git behind VPN or WARP.'
+                            : 'Use Server Sync when the MemStack service itself can reach the docs repo directly.'
+                        }
+                      />
+
                       <Card size="small" style={{ borderRadius: 12 }}>
                         <Space direction="vertical" size="small" style={{ width: '100%' }}>
                           <Text strong style={{ fontSize: 13 }}>
@@ -348,6 +374,10 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
                               Saved Storage
                             </Text>
                             <Text type="secondary" style={{ fontSize: 12 }}>
+                              Feature repos hold code changes. The docs repo holds Feature Memory markdown. MemStack
+                              prepares the content that gets written there.
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
                               Mode:{' '}
                               {getEffectiveConfig(plugin).storageWriteMode === 'desktop'
                                 ? 'Desktop Sync'
@@ -366,6 +396,17 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               Topic Wiki Path: {'Wiki/<topic>.md'}
                             </Text>
+                            <Alert
+                              type="success"
+                              showIcon
+                              style={{ marginTop: 8, borderRadius: 12 }}
+                              message="Setup Summary"
+                              description={
+                                getEffectiveConfig(plugin).storageWriteMode === 'desktop'
+                                  ? 'Desktop Sync will prepare docs through MemStack, then commit them from this laptop.'
+                                  : 'Server Sync will let MemStack prepare and write the docs directly.'
+                              }
+                            />
                           </Space>
                         </Card>
                       )}
@@ -384,9 +425,71 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
                               readOnly
                               value={getEffectiveConfig(plugin).localStorageRepoPath || getSuggestedMemstackRepoPath()}
                             />
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              Happy path: choose the docs repo, save config, validate, then complete a feature to commit
+                              the final memory docs.
+                            </Text>
                           </Space>
                         </Card>
                       )}
+
+                      {getEffectiveConfig(plugin).storageWriteMode === 'desktop' &&
+                        docsLayoutState[plugin.id]?.hasOldLayout && (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ borderRadius: 12 }}
+                            message="Old docs layout detected"
+                            description={
+                              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  This docs repo still contains older MemStack paths. Run the migration once to move
+                                  everything into the current `Wiki/PROJECT_CONTEXT.md`, `Wiki/Features/...`, and
+                                  `Wiki/Topics/...` structure.
+                                </Text>
+                                {docsLayoutState[plugin.id]?.issues?.map((issue) => (
+                                  <Text key={issue} type="secondary" style={{ fontSize: 12 }}>
+                                    - {issue}
+                                  </Text>
+                                ))}
+                                <div>
+                                  <Button
+                                    loading={migratingPluginId === plugin.id}
+                                    onClick={async () => {
+                                      try {
+                                        setMigratingPluginId(plugin.id)
+                                        const result = await window.nexworkAPI.plugins.runAction(
+                                          plugin.id,
+                                          'migrateDocsLayout',
+                                        )
+                                        if (!result.success) {
+                                          message.error(result.error || 'Could not migrate docs layout')
+                                          return
+                                        }
+                                        message.success(result.result?.message || 'Docs layout migrated')
+                                        await onRefresh()
+                                        const refreshed = await window.nexworkAPI.plugins.runAction(
+                                          plugin.id,
+                                          'detectDocsLayout',
+                                        )
+                                        if (refreshed.success) {
+                                          setDocsLayoutState((prev) => ({
+                                            ...prev,
+                                            [plugin.id]: refreshed.result,
+                                          }))
+                                        }
+                                      } finally {
+                                        setMigratingPluginId(null)
+                                      }
+                                    }}
+                                  >
+                                    Migrate Docs Layout
+                                  </Button>
+                                </div>
+                              </Space>
+                            }
+                          />
+                        )}
                     </>
                   )}
 
@@ -424,89 +527,6 @@ export function PluginSettings({ plugins, workspaceRoot, onToggle, onSaveConfig,
             </Space>
           </Card>
         ))}
-
-        <Modal
-          title="Extensions Library"
-          open={addPluginOpen}
-          onCancel={() => {
-            setAddPluginOpen(false)
-            setCatalogQuery('')
-          }}
-          footer={null}
-          width={760}
-          destroyOnClose
-        >
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Alert
-              type="info"
-              showIcon
-              message="Install first-party extensions"
-              description="This library lists supported Nexwork extensions. Enable one to add it to your workspace, then configure it from the installed extensions list."
-            />
-
-            <SearchInput
-              allowClear
-              placeholder="Search extensions by name, purpose, or category"
-              value={catalogQuery}
-              onChange={(event) => setCatalogQuery(event.target.value)}
-              prefix={<Search size={14} />}
-            />
-
-            {availablePlugins.length === 0 ? (
-              <Alert
-                type="success"
-                showIcon
-                message="All available extensions are already installed"
-                description="Disable one from the installed list above if you want to remove it from the active workspace."
-              />
-            ) : filteredAvailablePlugins.length === 0 ? (
-              <Alert
-                type="warning"
-                showIcon
-                message="No extensions match your search"
-                description="Try a broader keyword like knowledge, workflow, or automation."
-              />
-            ) : (
-              filteredAvailablePlugins.map((plugin) => (
-                <Card key={plugin.id} size="small">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <Space>
-                        <Cable size={16} />
-                        <Text strong>{plugin.name}</Text>
-                        <Tag>{getExtensionCategory(plugin)}</Tag>
-                        <Tag>Available</Tag>
-                      </Space>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {plugin.description}
-                        </Text>
-                      </div>
-                    </div>
-                    <Button
-                      type="primary"
-                      loading={togglingPluginId === plugin.id}
-                      onClick={async () => {
-                        try {
-                          setTogglingPluginId(plugin.id)
-                          const didEnable = await onToggle(plugin.id, true)
-                          if (didEnable) {
-                            setAddPluginOpen(false)
-                            setCatalogQuery('')
-                          }
-                        } finally {
-                          setTogglingPluginId(null)
-                        }
-                      }}
-                    >
-                      Install
-                    </Button>
-                  </div>
-                </Card>
-              ))
-            )}
-          </Space>
-        </Modal>
 
         <Modal
           title="Choose Storage Repository"

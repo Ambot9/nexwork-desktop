@@ -341,6 +341,61 @@ export function Settings() {
           </Row>
         </Card>
 
+        <Card style={{ borderRadius: 18 }} styles={{ body: { padding: 20 } }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong style={{ fontSize: 16 }}>
+                Recommended Flow
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                Use this as the default Nexwork path when onboarding a team or demoing the product.
+              </Text>
+            </div>
+
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8} style={{ display: 'flex' }}>
+                <Card size="small" style={{ width: '100%', height: '100%', borderRadius: 14 }}>
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    <Tag color="blue" style={{ width: 'fit-content', margin: 0 }}>
+                      Step 1
+                    </Tag>
+                    <Text strong>Set Workspace</Text>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      Pick the workspace root first so Nexwork can discover the repos you want to manage.
+                    </Text>
+                  </Space>
+                </Card>
+              </Col>
+              <Col xs={24} md={8} style={{ display: 'flex' }}>
+                <Card size="small" style={{ width: '100%', height: '100%', borderRadius: 14 }}>
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    <Tag color="blue" style={{ width: 'fit-content', margin: 0 }}>
+                      Step 2
+                    </Tag>
+                    <Text strong>Create Feature</Text>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      Select the related projects, choose a template, and add Feature Memory only when you need it.
+                    </Text>
+                  </Space>
+                </Card>
+              </Col>
+              <Col xs={24} md={8} style={{ display: 'flex' }}>
+                <Card size="small" style={{ width: '100%', height: '100%', borderRadius: 14 }}>
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    <Tag color="blue" style={{ width: 'fit-content', margin: 0 }}>
+                      Step 3
+                    </Tag>
+                    <Text strong>Complete and Sync</Text>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      Finish the feature, then sync final memory once the implementation is ready to be stored.
+                    </Text>
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+          </Space>
+        </Card>
+
         <div>
           <Space align="center" size="small" style={{ marginBottom: 12 }}>
             <FolderTree size={16} />

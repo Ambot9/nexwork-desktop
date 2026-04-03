@@ -267,6 +267,107 @@ async function ensureDesktopSyncRepo(repoPath: string) {
   }
 }
 
+async function detectDesktopDocsLayout(repoPath: string) {
+  const issues: string[] = []
+
+  if (!existsSync(repoPath) || !existsSync(join(repoPath, '.git'))) {
+    return {
+      hasOldLayout: false,
+      issues,
+      message: 'Docs repo is not ready yet.',
+    }
+  }
+
+  if (existsSync(join(repoPath, 'PROJECT_CONTEXT.md'))) {
+    issues.push('Root PROJECT_CONTEXT.md should move into Wiki/PROJECT_CONTEXT.md')
+  }
+
+  if (existsSync(join(repoPath, 'Features'))) {
+    issues.push('Root Features/ should move into Wiki/Features/')
+  }
+
+  const legacyTopicFiles = ['coloris.md', 'core.api.md', 'hermes.md', 'monika.md', 'tycho.md'].filter((name) =>
+    existsSync(join(repoPath, 'Wiki', name)),
+  )
+  if (legacyTopicFiles.length > 0) {
+    issues.push(`Legacy topic files found in Wiki/: ${legacyTopicFiles.join(', ')}`)
+  }
+
+  if (existsSync(join(repoPath, 'Wiki', 'Wiki'))) {
+    issues.push('Legacy Wiki/Wiki/ folder should move into Wiki/Topics/')
+  }
+
+  return {
+    hasOldLayout: issues.length > 0,
+    issues,
+    message:
+      issues.length > 0 ? 'Old docs layout detected.' : 'Docs layout already matches the current Wiki structure.',
+  }
+}
+
+async function migrateDesktopDocsLayout(repoPath: string) {
+  await ensureDesktopSyncRepo(repoPath)
+
+  const moves: string[] = []
+  const docsRoot = join(repoPath, 'Wiki')
+  const featuresDir = join(docsRoot, 'Features')
+  const topicsDir = join(docsRoot, 'Topics')
+
+  const rootProjectContextPath = join(repoPath, 'PROJECT_CONTEXT.md')
+  const docsProjectContextPath = join(docsRoot, 'PROJECT_CONTEXT.md')
+  if (existsSync(rootProjectContextPath) && !existsSync(docsProjectContextPath)) {
+    await fs.rename(rootProjectContextPath, docsProjectContextPath)
+    moves.push('PROJECT_CONTEXT.md -> Wiki/PROJECT_CONTEXT.md')
+  }
+
+  const rootFeaturesDir = join(repoPath, 'Features')
+  if (existsSync(rootFeaturesDir)) {
+    const yearEntries = await fs.readdir(rootFeaturesDir, { withFileTypes: true }).catch(() => [])
+    for (const entry of yearEntries) {
+      const sourcePath = join(rootFeaturesDir, entry.name)
+      const targetPath = join(featuresDir, entry.name)
+      if (!existsSync(targetPath)) {
+        await fs.rename(sourcePath, targetPath)
+        moves.push(`Features/${entry.name} -> Wiki/Features/${entry.name}`)
+      }
+    }
+  }
+
+  const legacyWikiDir = join(docsRoot, 'Wiki')
+  if (existsSync(legacyWikiDir)) {
+    const legacyEntries = await fs.readdir(legacyWikiDir, { withFileTypes: true }).catch(() => [])
+    for (const entry of legacyEntries) {
+      const sourcePath = join(legacyWikiDir, entry.name)
+      const targetPath = join(topicsDir, entry.name)
+      if (!existsSync(targetPath)) {
+        await fs.rename(sourcePath, targetPath)
+        moves.push(`Wiki/Wiki/${entry.name} -> Wiki/Topics/${entry.name}`)
+      }
+    }
+  }
+
+  const docsRootEntries = await fs.readdir(docsRoot, { withFileTypes: true }).catch(() => [])
+  for (const entry of docsRootEntries) {
+    if (!entry.isFile()) continue
+    if (entry.name === 'PROJECT_CONTEXT.md') continue
+    if (!entry.name.toLowerCase().endsWith('.md')) continue
+
+    const sourcePath = join(docsRoot, entry.name)
+    const targetPath = join(topicsDir, entry.name)
+    if (!existsSync(targetPath)) {
+      await fs.rename(sourcePath, targetPath)
+      moves.push(`Wiki/${entry.name} -> Wiki/Topics/${entry.name}`)
+    }
+  }
+
+  return {
+    moved: moves.length,
+    moves,
+    message:
+      moves.length > 0 ? `Moved ${moves.length} item(s) into the new Wiki structure.` : 'No migration was needed.',
+  }
+}
+
 async function writeDesktopSyncFiles(
   config: Record<string, any> | undefined,
   prepared: { files?: Array<{ path: string; content: string }>; commitMessage?: string },
@@ -629,6 +730,19 @@ export const memstackPlugin: MainPlugin = {
       }
 
       return { branches }
+    }
+
+    if (action === 'detectDocsLayout') {
+      const repoPath = resolveDesktopSyncRepoPath(context.state.config)
+      return detectDesktopDocsLayout(repoPath)
+    }
+
+    if (action === 'migrateDocsLayout') {
+      const repoPath = resolveDesktopSyncRepoPath(context.state.config)
+      if (!repoPath) {
+        throw new Error('Save Desktop Sync setup first so Nexwork knows which docs repo to migrate.')
+      }
+      return migrateDesktopDocsLayout(repoPath)
     }
 
     if (action === 'listStorageRepos') {

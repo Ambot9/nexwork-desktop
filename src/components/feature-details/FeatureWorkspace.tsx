@@ -179,11 +179,11 @@ export function FeatureWorkspace({ ctx }: Props) {
                     </Text>
                     {status?.exists ? (
                       <Tag color="green" style={{ fontSize: 11, marginInlineEnd: 0 }}>
-                        Worktree Created Remote
+                        Worktree Created Locally
                       </Tag>
                     ) : (
                       <Tag color="orange" style={{ fontSize: 11, marginInlineEnd: 0 }}>
-                        Worktree Not Created Remote
+                        Worktree Not Created Locally
                       </Tag>
                     )}
                     {remoteNotCreated && (

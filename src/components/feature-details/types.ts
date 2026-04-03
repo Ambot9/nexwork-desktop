@@ -31,6 +31,12 @@ export interface ConflictInfo {
   workingDir: string
 }
 
+export interface DocsRepoSummary {
+  mode: 'server' | 'desktop' | 'none'
+  state: 'ready' | 'needs_migration' | 'not_ready' | 'unknown'
+  label: string
+}
+
 export interface FeatureDetailsContext {
   // Data
   feature: Feature | null
@@ -45,6 +51,7 @@ export interface FeatureDetailsContext {
   projectWorktreeStatus: Record<string, WorktreeStatus>
   creatingWorktrees: Record<string, boolean>
   localFeatureBranches: Record<string, boolean>
+  docsRepoSummary: DocsRepoSummary
 
   // Preferences
   preferredIDE: string

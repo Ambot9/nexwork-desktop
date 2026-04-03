@@ -48,12 +48,32 @@ function getMemstackSyncSummary(feature: FeatureDetailsContext['feature']) {
 }
 
 export function FeatureHeader({ ctx }: Props) {
-  const { feature, stats, onBack } = ctx
+  const { feature, stats, onBack, docsRepoSummary } = ctx
   if (!feature) return null
 
   const progress = stats ? Math.round((stats.projectStatus.completed / stats.projectStatus.total) * 100) : 0
   const projectCount = feature.projects.length
   const memstackSyncSummary = getMemstackSyncSummary(feature)
+  const getDocsRepoTag = () => {
+    if (docsRepoSummary.state === 'ready') return <Tag color="success">{docsRepoSummary.label}</Tag>
+    if (docsRepoSummary.state === 'needs_migration') return <Tag color="warning">{docsRepoSummary.label}</Tag>
+    if (docsRepoSummary.state === 'not_ready') return <Tag color="default">{docsRepoSummary.label}</Tag>
+    return null
+  }
+
+  const getNextStepText = () => {
+    if (progress === 100) {
+      return feature.pluginRefs?.memstack?.tracked
+        ? 'This feature is complete. Review the stored memory state or move on to the next feature.'
+        : 'This feature is complete. If you need shared memory, sync it during completion before archiving.'
+    }
+
+    if (progress > 0) {
+      return 'Keep implementation moving in the selected repos, then use Complete Feature once the final state is ready.'
+    }
+
+    return 'Start in the related repos first, then return here to review changes, sync branches, and complete the feature.'
+  }
 
   const getProgressTag = () => {
     if (progress === 100) return <Tag color="success">Completed</Tag>
@@ -151,6 +171,14 @@ export function FeatureHeader({ ctx }: Props) {
           Track progress, review repository changes, and manage worktrees for this feature from one place.
         </Text>
 
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 14, borderRadius: 14 }}
+          message="Next Step"
+          description={getNextStepText()}
+        />
+
         <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
           <Tag color="blue" style={{ paddingInline: 10 }}>
             {projectCount} project{projectCount !== 1 ? 's' : ''}
@@ -163,6 +191,7 @@ export function FeatureHeader({ ctx }: Props) {
           <Tag color="default" style={{ paddingInline: 10 }}>
             Created {new Date(feature.createdAt).toLocaleDateString()}
           </Tag>
+          {getDocsRepoTag()}
           {memstackSyncSummary && (
             <Tag color={memstackSyncSummary.color} style={{ paddingInline: 10 }}>
               {memstackSyncSummary.label}

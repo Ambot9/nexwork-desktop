@@ -37,6 +37,7 @@ import type {
   GitOps,
   WorktreeStatus,
   ConflictInfo,
+  DocsRepoSummary,
 } from '../components/feature-details/types'
 import { Err, errMsg, classifyGitError } from '../components/feature-details/types'
 
@@ -109,6 +110,11 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
   const [addProjectPullFirst, setAddProjectPullFirst] = useState<Record<string, boolean>>({})
   const [addProjectsAvailableBranches, setAddProjectsAvailableBranches] = useState<Record<string, string[]>>({})
   const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
+  const [docsRepoSummary, setDocsRepoSummary] = useState<DocsRepoSummary>({
+    mode: 'none',
+    state: 'unknown',
+    label: 'Docs repo not in use',
+  })
   const [preferredIDE] = useState<string>(() => {
     return localStorage.getItem('preferredIDE') || 'vscode'
   })
@@ -170,6 +176,53 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
           if (p.worktreePath) newWorktreeInfo[p.name] = p.worktreePath
         })
         setWorktreeInfo(newWorktreeInfo)
+      }
+
+      const memstackPlugin = pluginData.find((plugin: PluginDescriptor) => plugin.id === 'memstack' && plugin.enabled)
+      const writeMode =
+        typeof memstackPlugin?.config?.storageWriteMode === 'string' ? memstackPlugin.config.storageWriteMode : 'server'
+
+      if (!memstackPlugin) {
+        setDocsRepoSummary({
+          mode: 'none',
+          state: 'unknown',
+          label: 'Docs repo not in use',
+        })
+      } else if (writeMode !== 'desktop') {
+        setDocsRepoSummary({
+          mode: 'server',
+          state: memstackPlugin.status.state === 'ready' ? 'ready' : 'not_ready',
+          label: memstackPlugin.status.state === 'ready' ? 'Server Sync ready' : 'Server Sync needs setup',
+        })
+      } else {
+        try {
+          const layout = await window.nexworkAPI.plugins.runAction('memstack', 'detectDocsLayout')
+          if (layout.success && layout.result?.hasOldLayout) {
+            setDocsRepoSummary({
+              mode: 'desktop',
+              state: 'needs_migration',
+              label: 'Docs repo needs migration',
+            })
+          } else if (layout.success) {
+            setDocsRepoSummary({
+              mode: 'desktop',
+              state: 'ready',
+              label: 'Docs repo ready',
+            })
+          } else {
+            setDocsRepoSummary({
+              mode: 'desktop',
+              state: 'not_ready',
+              label: 'Docs repo needs setup',
+            })
+          }
+        } catch {
+          setDocsRepoSummary({
+            mode: 'desktop',
+            state: 'not_ready',
+            label: 'Docs repo needs setup',
+          })
+        }
       }
     } catch (error) {
       console.error('Failed to load feature details:', error)
@@ -1808,6 +1861,7 @@ export function FeatureDetails({ featureName, onBack }: FeatureDetailsProps) {
     projectWorktreeStatus,
     creatingWorktrees,
     localFeatureBranches,
+    docsRepoSummary,
     preferredIDE,
     projectIDEPreferences,
     projectTerminalPreferences,
